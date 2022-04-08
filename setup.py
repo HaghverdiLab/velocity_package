@@ -1,0 +1,12 @@
+from setuptools import setup
+
+setup(
+    name='velocity_package',
+    version='0.1',
+    packages=['velocity', 'velocity.tools', 'velocity.processing', 'velocity.visualisation'],
+    url='',
+    license='',
+    author='vmarotl',
+    author_email='valerie.marot@tum.de',
+    description='RNA velocity package'
+)
