@@ -1,2 +1,3 @@
-import vis
-import pretty_plotting
+import velocity.visualisation.vis
+import velocity.visualisation.pretty_plotting
+

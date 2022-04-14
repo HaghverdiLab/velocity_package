@@ -1,5 +1,5 @@
 from scipy.spatial import cKDTree
-from vis_utils import *
+from velocity.visualisation.vis_utils import *
 
 
 def project_velocities(Y_data, X_current, X_future, n_neighbors=100, row_norm=True,
@@ -51,7 +51,7 @@ def project_velocities(Y_data, X_current, X_future, n_neighbors=100, row_norm=Tr
             X_future = X_current + v
 
     print("Projecting velocities using " +
-          ("our modified nystrom approach " if method == "nystrom_modif" else "nystrom approach")+".")
+          ("our modified nystrom approach" if method == "nystrom_modif" else "nystrom approach")+".")
 
     if method == "nystrom_modif":
         # first calculate W=P^-1*Y
@@ -78,8 +78,16 @@ def project_velocities(Y_data, X_current, X_future, n_neighbors=100, row_norm=Tr
             Y_future = np.insert(Y_future, drop - np.arange(0, len(drop), 1), Y_future[first], axis=0)
     else:
         NN = cKDTree(X_current).query(x=X_future, k=n_neighbors, n_jobs=1)[1]
+        # get left row normalisation factors
+        P = d2p_NN(pairwise_distances(X_current, metric="euclidean"), NN, row_norm=False)
+        D_left = np.diag(1/np.sqrt(np.sum(P, axis=1)))
+        # compute trans P matrix from old to new
         d2 = pairwise_distances(X_future, X_current, metric="euclidean")
-        P_2 = d2p_NN(d2, NN, row_norm=row_norm)
+        P_2 = d2p_NN(d2, NN, row_norm=False)
+        # right normalisation factor
+        D_right = np.diag(1/np.sqrt(np.sum(P_2, axis=1)))
+        # normalise trans P matrix
+        P_2 = np.dot(np.dot(D_left, P_2), D_right)
         Y_future = np.dot(P_2, Y_data)
     return Y_future
 
