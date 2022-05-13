@@ -1,6 +1,9 @@
 import numpy as np
 import pandas as pd
 
+### TO-DO:
+### Select layer in HVGs?
+
 def pearson_residuals(counts, theta=100):
     """
     Computes analytical residuals for NB model with a fixed theta,
@@ -47,7 +50,7 @@ def get_hvgs(adata, no_of_hvgs=2000, theta=100):
     """
 
     # get pearson residuals
-    if  type(adata.layers[layer]) == scipy.sparse.csr.csr_matrix:
+    if  type(adata.X) == scipy.sparse.csr.csr_matrix:
         residuals = pearson_residuals(adata.X.todense(), theta)
     else:
         residuals = pearson_residuals(adata, theta)
