@@ -1,11 +1,5 @@
 import numpy as np
 import pandas as pd
-from scipy.sparse import issparse
-
-
-# todo high U / S selection
-# todo safety check for sparse matrices
-
 
 def pearson_residuals(counts, theta=100):
     """
@@ -53,10 +47,10 @@ def get_hvgs(adata, no_of_hvgs=2000, theta=100):
     """
 
     # get pearson residuals
-    if issparse(adata.X):
+    if  type(adata.layers[layer]) == scipy.sparse.csr.csr_matrix:
         residuals = pearson_residuals(adata.X.todense(), theta)
     else:
-        residuals = pearson_residuals(adata.X.todense(), theta)
+        residuals = pearson_residuals(adata, theta)
 
     # get variance of residuals
     residuals_variance = np.var(residuals, axis=0)
@@ -67,3 +61,36 @@ def get_hvgs(adata, no_of_hvgs=2000, theta=100):
     hvgs = variances.sort_values(by="variances", ascending=False)[0:no_of_hvgs]["genes"].values
 
     return hvgs
+
+def get_high_us_genes(adata, minlim_u=3, minlim_s=3, unspliced_layer='unspliced', spliced_layer='spliced'):
+    '''
+    Function to select genes that have spliced and unspliced counts above a certain threshold. Genes of 
+    which the maximum u and s count is above a set threshold are selected. Threshold varies per dataset 
+    and influences the numbers of genes that are selected.
+    
+    Parameters
+    ----------
+    adata
+        Annotated data matrix
+    minlim_u: `int` (default: 3)
+        Threshold above which the maximum unspliced counts of a gene should fall to be included in the 
+        list of high US genes.
+    minlim_s: `int` (default: 3)
+        Threshold above which the maximum spliced counts of a gene should fall to be included in the 
+        list of high US genes.
+    unspliced_layer: `str` (default: 'unspliced')
+        Name of layer that contains the unspliced counts.
+    spliced_layer: `str` (default: 'spliced')
+        Name of layer that contains the spliced counts.
+    '''
+    
+    # test if layers are not sparse but dense
+    for layer in [unspliced_layer, spliced_layer]:
+        if type(adata.layers[layer]) == scipy.sparse.csr.csr_matrix: adata.layers[layer] = adata.layers[layer].todense()
+    
+    # get high US genes
+    u_genes = np.array(np.max(adata.layers[unspliced_layer], axis=0)).flatten() > minlim_u
+    s_genes = np.array(np.max(adata.layers[spliced_layer], axis=0)).flatten() > minlim_s
+    us_genes = adata.var_names[u_genes & s_genes].values
+    
+    return us_genes
