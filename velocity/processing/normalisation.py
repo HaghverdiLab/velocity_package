@@ -27,7 +27,7 @@ def normalise_layers(adata, mode='combined', norm='L1', unspliced_layer='unsplic
     
     # test if layers are not sparse but dense
     for layer in [unspliced_layer, spliced_layer]:
-        if type(adata.layers[layer]) == scipy.sparse.csr.csr_matrix: adata.layers[layer] = adata.layers[layer].todense()
+        if scipy.sparse.issparse(adata.layers[layer]): adata.layers[layer] = adata.layers[layer].todense()
     
     # get total counts and normalize
     if total_counts is not None:
@@ -44,17 +44,16 @@ def normalise_layers(adata, mode='combined', norm='L1', unspliced_layer='unsplic
             if norm=='L1': total_counts = get_total_counts(us_combined, squared=False)
             if norm=='L2': total_counts = get_total_counts(us_combined, squared=True)
             mean_counts = int(np.mean(total_counts))
-            adata.layers[unspliced_layer] = np.asarray(adata.layers[unspliced_layer]/total_counts*mean_counts)
-            adata.layers[spliced_layer] = np.asarray(adata.layers[spliced_layer]/total_counts*mean_counts)
+            adata.layers[unspliced_layer] = np.asarray(adata.layers[unspliced_layer].T/total_counts*mean_counts).T
+            adata.layers[spliced_layer] = np.asarray(adata.layers[spliced_layer].T/total_counts*mean_counts).T
           
         if mode=='separate':
             for layer in [unspliced_layer, spliced_layer]:
                 if norm=='L1': total_counts = get_total_counts(adata.layers[layer], squared=False)
                 if norm=='L2': total_counts = get_total_counts(adata.layers[layer], squared=True)
                 mean_counts = int(np.mean(total_counts))
-                adata.layers[layer] = np.asarray(adata.layers[layer]/total_counts*mean_counts)
- 
-    return adata
+                adata.layers[layer] = np.asarray(adata.layers[layer].T/total_counts*mean_counts).T
+
 
 def get_total_counts(X, squared=False):
     
