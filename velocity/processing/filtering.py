@@ -33,7 +33,6 @@ def pearson_residuals(counts, theta=100):
 
     return z
 
-
 def get_hvgs(adata, no_of_hvgs=2000, theta=100):
     """
     Function to select the top x highly variable genes (HVGs)
