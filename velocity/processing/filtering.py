@@ -33,8 +33,8 @@ def pearson_residuals(counts, theta=100):
 
     return z
 
-def get_hvgs(adata, no_of_hvgs=2000, theta=100):
-    """
+def get_hvgs(adata, no_of_hvgs=2000, theta=100, layer='spliced'):
+    '''
     Function to select the top x highly variable genes (HVGs)
     from an anndata object.
 
@@ -43,23 +43,25 @@ def get_hvgs(adata, no_of_hvgs=2000, theta=100):
     adata
         Annotated data matrix
     no_of_hvgs: `int` (default: 2000)
-        Number of hig
+        Number of HVGs to return
     theta: `int` (default: 100)
         Gene-shared overdispersion parameter used in pearson_residuals
-    """
+    layer: `str` (default: 'spliced')
+        Name of layer that is used to find the HVGs.
+    '''
 
-    # get pearson residuals
-    if  type(adata.X) == scipy.sparse.csr.csr_matrix:
-        residuals = pearson_residuals(adata.X.todense(), theta)
+    ### get pearson residuals
+    if scipy.sparse.issparse(adata.layers[layer]):
+        residuals = pearson_residuals(adata.layers[layer].todense(), theta)
     else:
-        residuals = pearson_residuals(adata, theta)
+        residuals = pearson_residuals(adata.layers[layer], theta)
 
-    # get variance of residuals
+    ### get variance of residuals
     residuals_variance = np.var(residuals, axis=0)
     variances = pd.DataFrame({"variances": pd.Series(np.array(residuals_variance).flatten()),
                               "genes": pd.Series(np.array(adata.var_names))})
 
-    # get top x genes with highest variance
+    ### get top x genes with highest variance
     hvgs = variances.sort_values(by="variances", ascending=False)[0:no_of_hvgs]["genes"].values
 
     return hvgs
@@ -88,11 +90,11 @@ def get_high_us_genes(adata, minlim_u=3, minlim_s=3, unspliced_layer='unspliced'
     
     # test if layers are not sparse but dense
     for layer in [unspliced_layer, spliced_layer]:
-        if type(adata.layers[layer]) == scipy.sparse.csr.csr_matrix: adata.layers[layer] = adata.layers[layer].todense()
+        if scipy.sparse.issparse(adata.layers[layer]): adata.layers[layer] = adata.layers[layer].todense()
     
     # get high US genes
-    u_genes = np.array(np.max(adata.layers[unspliced_layer], axis=0)).flatten() > minlim_u
-    s_genes = np.array(np.max(adata.layers[spliced_layer], axis=0)).flatten() > minlim_s
-    us_genes = adata.var_names[u_genes & s_genes].values
+    u_genes = np.max(adata.layers[unspliced_layer], axis=0) > minlim_u
+    s_genes = np.max(adata.layers[spliced_layer], axis=0) > minlim_s
+    us_genes = adata.var_names[np.array(u_genes & s_genes).flatten()].values
     
     return us_genes
