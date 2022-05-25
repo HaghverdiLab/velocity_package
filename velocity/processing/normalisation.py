@@ -44,8 +44,8 @@ def normalise_layers(adata, mode='combined', norm='L1', unspliced_layer='unsplic
             if norm=='L1': total_counts = get_total_counts(us_combined, squared=False)
             if norm=='L2': total_counts = get_total_counts(us_combined, squared=True)
             mean_counts = int(np.mean(total_counts))
-            adata.layers[unspliced_layer] = np.asarray(adata.layers[unspliced_layer].T/total_counts*mean_counts).T
-            adata.layers[spliced_layer] = np.asarray(adata.layers[spliced_layer].T/total_counts*mean_counts).T
+            adata.layers[unspliced_layer] = np.asarray(adata.layers[unspliced_layer].T/total_counts.flatten()*mean_counts).T
+            adata.layers[spliced_layer] = np.asarray(adata.layers[spliced_layer].T/total_counts.flatten()*mean_counts).T
           
         if mode=='separate':
             for layer in [unspliced_layer, spliced_layer]:
