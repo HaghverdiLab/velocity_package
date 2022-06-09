@@ -31,28 +31,6 @@ def vector_distance(v_t, v_0, metric="cosine"):
               "for the difference in vector norm.")
 
 
-def nystrom(P, Y):
-    """Recovers a linear transformation bringing P into the low-dimensional space Y.
-
-    Parameters
-    ----------
-    P: 'np.ndarray'
-        n*n transition probability matrix
-    Y: 'np.ndarray'
-        n*d low dimensional embedding
-    Returns
-    -------
-    W: 'np.ndarray'
-        n*d inferred transformation matrix
-    """
-    # given the relation
-    # trans_p*W = proj
-    # we want to recover W=trans_p^-1*Y
-    p_inv = np.linalg.inv(P)
-    W = np.dot(p_inv, Y)
-    return W
-
-
 def Hbeta(Di, beta, i=-1):
     """
     Given distances and beta, computes row of transition probability matrix.
@@ -154,38 +132,6 @@ def d2p_NN(D, NN, u=30, tol=1e-4, row_norm=True):
         P_[i, NN[i]] = P[i]
 
     return P_
-
-
-# helper function
-def get_duplicate_row(M):
-    """Given a 2D array, return the index of duplicate rows.
-
-    Parameters
-    ----------
-    M: 'np.ndarray'
-        2D array in which we search for duplicate rows
-    Returns
-    -------
-        first[] (list of int) list of indexes of first occurrence of duplicate row
-        drop[[]] (list of list of int) list of indexes of additional occurrences of duplicate row. Has same length as
-            first[].
-    """
-    unq, count = np.unique(M, axis=0, return_counts=True)
-    repeated_groups = unq[count > 1]
-    first = []
-    drop = []
-    unique = np.ones(M.shape[0]).astype(bool)
-
-    loop = 0
-    for repeated_group in repeated_groups:
-        repeated_idx = np.argwhere(np.all(M == repeated_group, axis=1)).flatten()
-        drop.extend(repeated_idx.tolist()[1:])
-        unique[repeated_idx.tolist()[1:]] = 0
-        # first contains the position of the first occurrence AFTER removal of duplicates
-        first.extend(np.repeat(repeated_idx.tolist()[0], len(repeated_idx) - 1) - loop)
-        loop += 1
-    drop = drop
-    return first, drop, unique
 
 
 #################

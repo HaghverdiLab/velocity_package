@@ -5,13 +5,25 @@ import scipy.optimize as opt
 def fit_all(adata, use_raw=True, n=300):
     unspliced, spliced = adata.layers["unspliced" if use_raw else "Mu"], adata.layers["spliced" if use_raw else "Ms"]
     n_genes = adata.shape[1]
-    alpha, beta, U_switch, likelihood = np.zeros(n_genes), np.zeros(n_genes), np.zeros(n_genes), np.zeros(n_genes)
+    alpha, gamma, U_switch, likelihood = np.zeros(n_genes), np.zeros(n_genes), np.zeros(n_genes), np.zeros(n_genes)
+
     for i in range(adata.shape[1]):
         U_, S_ = unspliced[:, i], spliced[:, i]
-        Ms, Mu = np.max(S_), np.max(U_)
-        a, g, Uk, lik = fit(U_/Mu, S_/Ms)
-        alpha[i], beta[i], U_switch[i], likelihood[i] = a, g, Uk, lik
-    return alpha, beta, U_switch, likelihood
+        Ms = np.max(S_)
+        a, g, Uk, lik = fit(U_ / Ms, S_ / Ms, n=n)
+        alpha[i], gamma[i], U_switch[i], likelihood[i] = a, g, Uk, lik
+    return alpha, gamma, U_switch, likelihood
+
+
+def fit_helper(pars):
+    n_genes = len(pars)
+    alpha, gamma, U_switch, likelihood = np.zeros(n_genes), np.zeros(n_genes), np.zeros(n_genes), np.zeros(n_genes)
+
+    for i, p in enumerate(pars):
+        a, g, Uk, lik = fit(p[0], p[1], n=p[2])
+        alpha[i], gamma[i], U_switch[i], likelihood[i] = a, g, Uk, lik
+    print("-")
+    return np.array([alpha, gamma, U_switch, likelihood])
 
 
 def S(alpha, gamma, U0, S0, unspliced):
@@ -48,8 +60,8 @@ def D2_k(alpha, gamma, Uk, Pi, k, U0, S0, unspliced, spliced, scaling=1):
     return distS, distU
 
 
-def D2_full_wrapper(alpha_gamma_Uk, U0, S0, unspliced, spliced, scaling, n=50):
-    alpha, gamma, Uk = alpha_gamma_Uk[0], alpha_gamma_Uk[1], alpha_gamma_Uk[2]  # , alpha_gamma_Uk_Sk[3]
+def D2_full_wrapper(alpha_gamma_Uk, U0, S0, unspliced, spliced, scaling, n):
+    alpha, gamma, Uk = alpha_gamma_Uk[0], alpha_gamma_Uk[1], alpha_gamma_Uk[2]
     penalty = 0
     if Uk > alpha:  # constraint: switching time point cannot be bigger than steady-state value
         # note: this is a bit hacky but works
@@ -89,43 +101,53 @@ def get_Pi_fast(alpha, gamma, k, U0, S0, Uk, unspliced, spliced, scaling, n=100)
 
 
 def get_likelihood(alpha, gamma, U0, S0, Uk, spliced, unspliced, scaling):
-    std_u, std_s = np.std(unspliced * scaling), np.std(spliced)
     k = (unspliced / spliced) > (Uk / S(alpha, gamma, U0, S0, Uk))
     Pi = get_Pi_fast(alpha, gamma, k, U0, S0, Uk, unspliced, spliced, scaling, 500)  # todo full Pi
     distS, distU = D2_k(alpha, gamma, Uk, Pi, k, U0, S0, unspliced, spliced, scaling)
-    distU /= std_u
-    distS /= std_s
-    distX = distU ** 2 + distU ** 2
-    varx = np.mean(distX) - np.mean(np.sign(distS) * np.sqrt(distX)) ** 2  # np.var(np.sign(distS) * np.sqrt(distX))
-    varx += varx == 0
-    # plt.hist(distU/varx, bins=100)
-    # plt.show()
 
-    loglik = (-1 / (2 * len(distS))) * (np.sum(distX) / varx)
+    std_s, std_u = np.std(spliced * scaling), np.std(unspliced)
+    distS /= std_s
+    distU /= std_u
+
+    distX = distU ** 2 + distS ** 2
+    varx = np.var(np.sign(distS) * np.sqrt(distX))
+    varx += varx == 0
+    n = len(distS)
+    loglik = - (1 / (2 * n)) * np.sum(distX / varx)
 
     return np.exp(loglik) * (1 / np.sqrt(2 * np.pi * varx))
 
 
 def fit(unspliced, spliced, n=50):
-    sub = (spliced > 0) & (unspliced > 0)
-    spliced, unspliced = spliced[sub], unspliced[sub]
-    # initialisation
-    Ms, Mu = np.max(spliced), np.max(unspliced)
-    scaling = Ms / Mu
-    alpha, gamma = Mu, Mu / Ms
-    U0, S0 = 0, 0
-    # fit
-    i = 4
-    res1 = opt.minimize(D2_full_wrapper,
-                        x0=np.array([alpha, gamma, alpha]),
-                        args=(U0, S0, unspliced, spliced, scaling, n),
-                        bounds=((alpha / i, alpha * i), (gamma / i, gamma * i), (alpha / i, alpha * i)),
-                        method="Nelder-Mead")
-    alpha, gamma, Uk = res1.x
-    if Uk > alpha:
-        Uk = alpha
+    max_u, max_s = np.quantile(unspliced, .98), np.quantile(spliced, .98)
+    sub = (unspliced > 0) & (spliced > 0) & ((unspliced > 0.05 * max_u) | (spliced > 0.05 * max_s))
 
-    lik = get_likelihood(alpha, gamma, U0, S0, Uk, spliced, unspliced, scaling)
+    spliced, unspliced = spliced[sub], unspliced[sub]
+    std_s, std_u = np.std(spliced), np.std(unspliced)
+    # initialisation
+    scaling = 1/0.6#std_s / std_u  # used s.t. penalty on S and on U are on the same scale
+    if np.sum(sub) > 100:
+        print(scaling)
+        unspliced *= scaling
+        scaling = 1
+        max_u, max_s = np.max(unspliced), np.max(spliced)
+        alpha, gamma = max_u, max_u / max_s
+        U0, S0 = 0, 0
+        # fit
+        i = 2
+        # plot_kinetics(alpha, gamma, spliced, unspliced, alpha, scaling=scaling)
+        res1 = opt.minimize(D2_full_wrapper,
+                            x0=np.array([alpha, gamma, alpha]),
+                            args=(U0, S0, unspliced, spliced, scaling, n),
+                            bounds=((alpha / i, alpha * i), (gamma / i, gamma * i), (0, None)),
+                            method="Nelder-Mead")
+        alpha, gamma, Uk = res1.x
+        if Uk > alpha:
+            Uk = alpha
+        lik = get_likelihood(alpha, gamma, U0, S0, Uk, spliced, unspliced, scaling)
+        plot_kinetics(alpha, gamma, spliced, unspliced, Uk, scaling=scaling)
+    else:
+        alpha, gamma, Uk, lik = np.nan, np.nan, np.nan, 0
     return alpha, gamma, Uk, lik
 
 
@@ -135,25 +157,31 @@ kwargs = {"scale": 1, "angles": "xy", "scale_units": "xy", "edgecolors": "k",
           "linewidth": 0.01, "headlength": 4, "headwidth": 5, "headaxislength": 3, "alpha": .3}
 
 
-def plot_kinetics(alpha, gamma, spliced, unspliced, k, Uk, Pi, dist=True, scaling=1, U0=0, S0=0):
+def plot_kinetics(alpha, gamma, spliced, unspliced, Uk, dist=True, scaling=1, U0=0, S0=0):
     Sk = S(alpha, gamma, U0, S0, Uk)
+    k = (unspliced / spliced) > (Uk / S(alpha, gamma, U0, S0, Uk))
+    Pi = get_Pi_fast(alpha, gamma, k, U0, S0, Uk, unspliced, spliced, scaling, n=500)
 
     plt.subplots(1, 1, figsize=(8, 6))  # , frameon=False)
     if dist:
         distS, distU = D2_k(alpha, gamma, Uk, Pi, k, 0, 0, unspliced, spliced, scaling)
         d = distS ** 2 + distU ** 2
-        print(get_likelihood(alpha, gamma, 0, 0, Uk, spliced, unspliced, scaling))
-        plt.scatter(unspliced, spliced, c=np.log1p(d), s=10)
+        plt.scatter(spliced, unspliced, c=np.log1p(d), s=10)
         plt.colorbar()
     else:
-        plt.scatter(unspliced, spliced, color="orange")
-        plt.scatter(unspliced[k], spliced[k], color="blue")
-    x_range = np.arange(0, Uk, Uk / 100)
-    plt.plot([0, Uk], (1 / gamma) * np.array([0, Uk]), color="grey", alpha=.5)
-    plt.plot(x_range, S(alpha, gamma, U0, S0, x_range), color="blue")
-    plt.plot(x_range, S(0, gamma, Uk, Sk, x_range), color="orange")
+        plt.scatter(spliced, unspliced, color="orange")
+        plt.scatter(spliced[k], unspliced[k], color="blue")
+    u_range = np.arange(0, Uk + (Uk / 100), Uk / 100)
+    plt.plot(S(alpha, gamma, U0, S0, u_range), u_range, color="blue")
+    s_down = S(0, gamma, Uk, Sk, u_range)
+    plt.plot(s_down, u_range, color="orange")
 
-    plt.quiver(unspliced[k], spliced[k], (Pi - unspliced)[k], (S(alpha, gamma, 0, 0, Pi) - spliced)[k], **kwargs)
-    plt.quiver(unspliced[~k], spliced[~k], (Pi - unspliced)[~k], (S(0, gamma, Uk, Sk, np.array(Pi)) - spliced)[~k],
+    u_steady = np.array([0, u_range[s_down == np.max(s_down)]])
+    plt.plot((1 / gamma) * u_steady, u_steady, color="grey", alpha=.5)
+
+    plt.quiver(spliced[k], unspliced[k], (S(alpha, gamma, 0, 0, Pi) - spliced)[k], (Pi - unspliced)[k], **kwargs)
+    plt.quiver(spliced[~k], unspliced[~k], (S(0, gamma, Uk, Sk, np.array(Pi)) - spliced)[~k], (Pi - unspliced)[~k],
                **kwargs)
+    plt.xlabel("spliced")
+    plt.ylabel("unspliced")
     plt.show()
