@@ -2,7 +2,7 @@ from velocity.tools.kappa_utils import *
 import numpy as np
 
 
-def kappa_velo(adata, mode="u", inplace=True, key="fit"):
+def kappa_scaling(adata, mode="u", inplace=True, key="fit"):
     """
     Scales the anndata object.
     Parameters
@@ -24,9 +24,9 @@ def kappa_velo(adata, mode="u", inplace=True, key="fit"):
     # get kappa
     # we get kappa first for down-reg (if there are sufficient cells in that state) then for up-reg, where down-reg
     # did not work. This order is chosen bc alpha=0 in down-reg, meaning we depend on one less fitted parameter.
-    kappas = np.array([get_kappa(adata, i, mode=mode, reg="down", key=key) for i in adata.var_names])
+    kappas = np.array([get_kappa_scVelo(adata, i, mode=mode, reg="down", key=key) for i in adata.var_names])
     idx = np.where(np.isnan(kappas))[0]
-    kappas[idx] = np.array([get_kappa(adata, i, mode=mode, reg="up", key=key) for i in idx])
+    kappas[idx] = np.array([get_kappa_scVelo(adata, i, mode=mode, reg="up", key=key) for i in idx])
     # check if any could still not be recovered
     # scale parameters in anndata object
     if not inplace:
@@ -41,7 +41,7 @@ def kappa_velo(adata, mode="u", inplace=True, key="fit"):
         return adata
 
 
-def get_kappa(adata, gene, mode="u", reg="up", key="fit"):
+def get_kappa_scVelo(adata, gene, mode="u", reg="up", key="fit"):
     """
     Parameters
     ----------
@@ -77,9 +77,14 @@ def get_kappa(adata, gene, mode="u", reg="up", key="fit"):
 
     # at least 30% of the cells need to be in the considered transient state
     if np.sum(r_) > 0.30 * (np.sum(up_reg) + np.sum(down_reg)):
-        t_dist, f = get_f_and_delta_t(ut, st, alpha, beta, gamma, r_, reg, mode)
-        k = get_slope(t_dist, f)
+        k = get_kappa(alpha, beta, gamma, ut, st, r_, reg, mode)
     else:
         k = np.nan
 
+    return k
+
+
+def get_kappa(alpha, beta, gamma, ut, st, assignments, reg, mode):
+    t_dist, f = get_f_and_delta_t(ut, st, alpha, beta, gamma, assignments, reg, mode)
+    k = get_slope(t_dist, f)
     return k

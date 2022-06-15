@@ -1,4 +1,5 @@
 import numpy as np
+import scipy.optimize as opt
 
 
 def S(alpha, gamma, U0, S0, unspliced):
@@ -130,6 +131,38 @@ def get_Pi_fast(alpha, gamma, k, U0, S0, Uk, unspliced, spliced, scaling, n=100)
     return Pi
 
 
+def cost_wrapper_full_Pi(Pi, alpha, gamma, U0, S0, unspliced, spliced, cost_scaling):
+    Si = S(alpha, gamma, U0, S0, Pi)
+    distS, distU = (Si - spliced), (Pi - unspliced) * cost_scaling
+    return distS ** 2 + distU ** 2
+
+
+def get_Pi_full(alpha, gamma, k, U0, S0, Uk, unspliced, spliced, scaling):
+    Pi = np.zeros(unspliced.shape)
+
+    # up
+    up_Pi = np.zeros(np.sum(k))
+    for i in range(np.sum(k)):
+        res1 = opt.minimize(cost_wrapper_full_Pi,
+                            x0=unspliced[k][i],
+                            args=(alpha, gamma, U0, S0, unspliced[k][i], spliced[k][i], scaling),
+                            method="Nelder-Mead")
+        up_Pi[i] = res1.x
+    Pi[k] = up_Pi
+
+    # down
+    Sk = S(alpha, gamma, U0, S0, Uk)
+    down_Pi = np.zeros(np.sum(~k))
+    for i in range(np.sum(~k)):
+        res1 = opt.minimize(cost_wrapper_full_Pi,
+                            x0=unspliced[~k][i],
+                            args=(0, gamma, Uk, Sk, unspliced[~k][i], spliced[~k][i], scaling),
+                            method="Nelder-Mead")
+        down_Pi[i] = res1.x
+    Pi[~k] = down_Pi
+    return Pi
+
+
 def cost(alpha, gamma, Uk, U0, S0, unspliced, spliced, cost_scaling, n):
     # todo speedup by computing Pi and distS, distU in one step instead of 2
     k = (unspliced / spliced) > (Uk / S(alpha, gamma, U0, S0, Uk))
@@ -157,3 +190,19 @@ def cost_wrapper_scaling(alpha_gamma_Uk, U0, S0, unspliced, spliced, n):
     u_s = unspliced * scaling
 
     return cost_wrapper([alpha, gamma, Uk], U0, S0, u_s, spliced, n)
+
+
+def get_likelihood(alpha, gamma, U0, S0, Uk, spliced, unspliced, cost_scaling, k, Pi):
+    distS, distU = D2_k(alpha, gamma, Uk, Pi, k, U0, S0, unspliced, spliced, cost_scaling)
+
+    std_s, std_u = np.std(spliced * cost_scaling), np.std(unspliced)
+    distS /= std_s
+    distU /= std_u
+
+    distX = distU ** 2 + distS ** 2
+    varx = np.var(np.sign(distS) * np.sqrt(distX))
+    varx += varx == 0
+    n = len(distS)
+    loglik = - (1 / (2 * n)) * np.sum(distX / varx)
+
+    return np.exp(loglik) * (1 / np.sqrt(2 * np.pi * varx))

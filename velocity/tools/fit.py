@@ -1,24 +1,48 @@
-import scipy.optimize as opt
 from velocity.tools.fit_utils import *
+from velocity.tools.kappa import *
 
 
-def fit_all(adata, use_raw=True, n=300):
+def recover_reaction_rate_pars(adata, use_raw, n=100, key="fit", fit_scaling=True, parallel=True, n_cores=None,
+                               n_parts=None):
     unspliced, spliced = adata.layers["unspliced" if use_raw else "Mu"], adata.layers["spliced" if use_raw else "Ms"]
-    n_genes = adata.shape[1]
-    alpha, gamma, U_switch, likelihood = np.zeros(n_genes), np.zeros(n_genes), np.zeros(n_genes), np.zeros(n_genes)
+    if parallel:
+        alpha, beta, gamma, U_switch, scaling, likelihood, Pi = fit_all_parallel(unspliced, spliced, n=n,
+                                                                                 n_cores=n_cores, n_parts=n_parts,
+                                                                                 fit_scaling=fit_scaling)
+    else:
+        alpha, beta, gamma, U_switch, scaling, likelihood, Pi = fit_all(unspliced, spliced, n=n,
+                                                                        fit_scaling=fit_scaling)
 
-    for i in range(adata.shape[1]):
+    # write to adata object
+    adata.var[key + "_alpha"] = alpha
+    adata.var[key + "_beta"] = beta
+    adata.var[key + "_gamma"] = gamma
+    adata.var[key + "_U_switch"] = U_switch
+    adata.var[key + "_likelihood"] = likelihood
+    adata.layers[key + "_Pi"] = Pi
+    if fit_scaling:
+        adata.var[key + "_scaling"] = scaling
+
+
+def fit_all(unspliced, spliced, n=300, fit_scaling=True):
+    n_entries = unspliced.shape[1]
+    alpha, beta, gamma, U_switch = np.zeros(n_entries), np.zeros(n_entries), np.zeros(n_entries), np.zeros(n_entries)
+    likelihood, scaling = np.zeros(n_entries), np.ones(n_entries)
+    Pi = np.zeros(unspliced.shape)
+
+    for i in range(n_entries):
         U_, S_ = unspliced[:, i], spliced[:, i]
         Ms = np.max(S_)
-        a, g, Uk, lik = fit(U_ / Ms, S_ / Ms, n=n)
-        alpha[i], gamma[i], U_switch[i], likelihood[i] = a, g, Uk, lik
-    return alpha, gamma, U_switch, likelihood
+        a, b, g, Uk, sc, lik, Pi_ = fit(U_ / Ms, S_ / Ms, n=n, fit_scaling=fit_scaling)
+        alpha[i], beta[i], gamma[i], U_switch[i], scaling[i], likelihood[i] = a, b, g, Uk, sc, lik
+        Pi[:, i] = Pi_
+    return alpha, beta, gamma, U_switch, scaling, likelihood, Pi
 
 
-def fit_all_parallel(adata, use_raw=False, n=100, n_cores=None, n_parts=None, fit_scaling=True):
+def fit_all_parallel(unspliced, spliced, n=100, n_cores=None, n_parts=None, fit_scaling=True):
     from joblib import Parallel, delayed
 
-    n_entries = adata.shape[1]
+    n_entries = unspliced.shape[1]
     if n_cores is None:
         import os
         n_cores = os.cpu_count()
@@ -31,7 +55,6 @@ def fit_all_parallel(adata, use_raw=False, n=100, n_cores=None, n_parts=None, fi
         n_parts = int((n_entries / n_cores) * 4)
 
     # prepare input
-    unspliced, spliced = adata.layers["unspliced" if use_raw else "Mu"], adata.layers["spliced" if use_raw else "Ms"]
     pars = []
     for i in range(n_entries):
         U_, S_ = unspliced[:, i], spliced[:, i]
@@ -44,7 +67,13 @@ def fit_all_parallel(adata, use_raw=False, n=100, n_cores=None, n_parts=None, fi
     output = [to_split[i:i + n_] for i in range(0, n_entries, n_)]
 
     # run fitting
-    result = Parallel(n_jobs=8)(delayed(fit_helper)(pars[i], n, fit_scaling) for i in output)
+    def fit_helper(pars_):
+        out = []
+        for p in pars_:
+            out.append(fit(p[0], p[1], n, fit_scaling))
+        return out
+
+    result = Parallel(n_jobs=8)(delayed(fit_helper)(pars[i]) for i in output)
 
     # format result
     r = []
@@ -52,56 +81,26 @@ def fit_all_parallel(adata, use_raw=False, n=100, n_cores=None, n_parts=None, fi
         r.extend(i)
     r = np.array(r)
 
-    if fit_scaling:
-        alpha, gamma, U_switch, scaling, likelihood = r[:, 0], r[:, 1], r[:, 2], r[:, 3], r[:, 4]
-    else:
-        alpha, gamma, U_switch, likelihood = r[:, 0], r[:, 1], r[:, 2], r[:, 3]
-        scaling = np.ones(n_entries)
+    alpha, beta, gamma, U_switch, scaling, likelihood = r[:, 0], r[:, 1], r[:, 2], r[:, 3], r[:, 4], r[:, 5]
+    Pi = np.stack(r[:, 6]).T
 
-    return alpha, gamma, U_switch, scaling, likelihood
+    return alpha, beta, gamma, U_switch, scaling, likelihood, Pi
 
 
-def fit_helper(pars, n, fit_scaling):
-    out = []
-    for i in pars:
-        out.append(fit(i[0], i[1], n, fit_scaling))
-    return out
-
-
-def get_likelihood(alpha, gamma, U0, S0, Uk, spliced, unspliced, cost_scaling):
-    k = (unspliced / spliced) > (Uk / S(alpha, gamma, U0, S0, Uk))
-    Pi = get_Pi_fast(alpha, gamma, k, U0, S0, Uk, unspliced, spliced, cost_scaling, 500)  # todo full Pi
-    distS, distU = D2_k(alpha, gamma, Uk, Pi, k, U0, S0, unspliced, spliced, cost_scaling)
-
-    std_s, std_u = np.std(spliced * cost_scaling), np.std(unspliced)
-    distS /= std_s
-    distU /= std_u
-
-    distX = distU ** 2 + distS ** 2
-    varx = np.var(np.sign(distS) * np.sqrt(distX))
-    varx += varx == 0
-    n = len(distS)
-    loglik = - (1 / (2 * n)) * np.sum(distX / varx)
-
-    return np.exp(loglik) * (1 / np.sqrt(2 * np.pi * varx))
-
-
-def fit(unspliced, spliced, n=50, fit_scaling=True):
-    max_u, max_s = np.quantile(unspliced, .98), np.quantile(spliced, .98)
+def fit(unspliced, spliced, n=50, fit_scaling=True, fit_kappa=True, kappa_mode="u"):
+    max_u, max_s = np.quantile(unspliced, .99), np.quantile(spliced, .99)
     sub = (unspliced > 0) & (spliced > 0) & ((unspliced > 0.05 * max_u) | (spliced > 0.05 * max_s))
 
-    spliced, unspliced = spliced[sub], unspliced[sub]
-    std_s, std_u = np.std(spliced), np.std(unspliced)
-    # initialisation
-    scaling = std_s / std_u if fit_scaling else 1  # due to unequal sampling of u and s
-    if np.sum(sub) > 100:
+    # subset of cells is used for fitting
+    spliced_subset, unspliced_subset = spliced[sub], unspliced[sub]
+    scaling = np.std(spliced_subset) / np.std(unspliced_subset) if fit_scaling else 1
+    if np.sum(sub) > 100:  # recoverable
 
-        U0, S0 = 0, 0
-        # fit
-        i = 3
-
-        max_u, max_s = np.max(unspliced * scaling), np.max(spliced)
+        # fit initialisation
+        U0, S0, i = 0, 0, 3
+        max_u = max_u * scaling
         alpha, gamma = max_u, max_u / max_s
+        # fit
         if fit_scaling:
             x0 = np.array([alpha, gamma, alpha, scaling])
             bounds = ((alpha / i, alpha * i), (gamma / i, gamma * i), (0, None), (scaling / 10, scaling * 10))
@@ -110,7 +109,7 @@ def fit(unspliced, spliced, n=50, fit_scaling=True):
             bounds = ((alpha / i, alpha * i), (gamma / i, gamma * i), (0, None))
         res1 = opt.minimize(cost_wrapper_scaling if fit_scaling else cost_wrapper,
                             x0=x0,
-                            args=(U0, S0, unspliced, spliced, n),
+                            args=(U0, S0, unspliced_subset, spliced_subset, n),
                             bounds=bounds,
                             method="Nelder-Mead")
         if fit_scaling:
@@ -119,13 +118,39 @@ def fit(unspliced, spliced, n=50, fit_scaling=True):
             alpha, gamma, Uk = res1.x
         if Uk > alpha:
             Uk = alpha
-        cost_scaling = np.std(spliced) / np.std(unspliced * scaling)
-        lik = get_likelihood(alpha, gamma, U0, S0, Uk, spliced, unspliced * scaling, cost_scaling=cost_scaling)
-        plot_kinetics(alpha, gamma, spliced, unspliced * scaling, Uk, scaling=cost_scaling)
 
+        # get final assignments of the cells
+        cost_scaling = np.std(spliced_subset) / np.std(unspliced_subset * scaling)
+        k = ((unspliced * scaling) / spliced) > (Uk / S(alpha, gamma, U0, S0, Uk))
+        Pi = np.zeros(unspliced.shape)
+        sub = (unspliced > 0) | (spliced > 0)
+        Pi[sub] = get_Pi_full(alpha, gamma, k[sub], U0, S0, Uk, (unspliced * scaling)[sub], spliced[sub], cost_scaling)
+        lik = get_likelihood(alpha, gamma, U0, S0, Uk, spliced, unspliced * scaling,
+                             cost_scaling=cost_scaling, Pi=Pi, k=k)
+
+        if fit_kappa:
+            ignore = .1  # removed bc the density approximation becomes tricky towards the exp function limit
+
+            upper = (Pi > ignore * Uk)
+            lower = (Pi < (1 - ignore) * Uk)
+            sub = upper & lower
+            # at least 30% of the cells need to be in the considered transient state
+            if np.sum(k & sub) > 0.30 * np.sum(sub):
+                beta = get_kappa(alpha, 1, gamma, Pi, None, k & sub, "up", "u")
+            elif np.sum((~k) & sub) > 0.30 * np.sum(upper & lower):
+                beta = get_kappa(0, 1, gamma, Pi, None, (~k) & sub, "down", "u")
+            else:
+                beta = np.nan
+                lik = 0
+        else:
+            beta = 1
+        alpha *= beta
+        gamma *= beta
+        plot_kinetics(alpha/beta, gamma/beta, spliced, unspliced * scaling, Uk, scaling=cost_scaling, k=k, Pi=Pi)
     else:
-        alpha, gamma, Uk, scaling, lik = np.nan, np.nan, np.nan, 0, 0
-    return alpha, gamma, Uk, scaling, lik
+        alpha, beta, gamma, Uk, scaling, lik = np.nan, np.nan, np.nan, np.nan, 0, 0
+        Pi = np.zeros(spliced.shape)
+    return alpha, beta, gamma, Uk, scaling, lik, Pi
 
 
 import matplotlib.pyplot as plt
@@ -134,12 +159,11 @@ kwargs = {"scale": 1, "angles": "xy", "scale_units": "xy", "edgecolors": "k",
           "linewidth": 0.01, "headlength": 4, "headwidth": 5, "headaxislength": 3, "alpha": .3}
 
 
-def plot_kinetics(alpha, gamma, spliced, unspliced, Uk, dist=True, scaling=1, U0=0, S0=0):
+def plot_kinetics(alpha, gamma, spliced, unspliced, Uk, dist=True, scaling=1, k=None, Pi=None):
+    U0, S0 = 0, 0
     Sk = S(alpha, gamma, U0, S0, Uk)
-    k = (unspliced / spliced) > (Uk / S(alpha, gamma, U0, S0, Uk))
-    Pi = get_Pi_fast(alpha, gamma, k, U0, S0, Uk, unspliced, spliced, scaling, n=500)
 
-    plt.subplots(1, 1, figsize=(8, 6))  # , frameon=False)
+    plt.subplots(1, 1, figsize=(8, 6))
     if dist:
         distS, distU = D2_k(alpha, gamma, Uk, Pi, k, 0, 0, unspliced, spliced, scaling)
         d = distS ** 2 + distU ** 2
@@ -154,7 +178,7 @@ def plot_kinetics(alpha, gamma, spliced, unspliced, Uk, dist=True, scaling=1, U0
     plt.plot(s_down, u_range, color="orange")
 
     u_steady = np.array([0, u_range[s_down == np.max(s_down)]])
-    plt.plot(u_steady / gamma, u_steady, color="grey", alpha=.5)
+    #plt.plot(u_steady / gamma, u_steady, color="grey", alpha=.5)
 
     plt.quiver(spliced[k], unspliced[k], (S(alpha, gamma, 0, 0, Pi) - spliced)[k], (Pi - unspliced)[k], **kwargs)
     plt.quiver(spliced[~k], unspliced[~k], (S(0, gamma, Uk, Sk, np.array(Pi)) - spliced)[~k], (Pi - unspliced)[~k],
