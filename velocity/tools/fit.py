@@ -107,9 +107,11 @@ def fit(unspliced, spliced, n=50, fit_scaling=True, fit_kappa=True, kappa_mode="
         else:
             x0 = np.array([alpha, gamma, alpha])
             bounds = ((alpha / i, alpha * i), (gamma / i, gamma * i), (0, None))
-        res1 = opt.minimize(cost_wrapper_scaling if fit_scaling else cost_wrapper,
+        res1 = opt.minimize(cost_wrapper_fastPi_scaling if fit_scaling else cost_wrapper_fastPi,
                             x0=x0,
-                            args=(U0, S0, unspliced_subset, spliced_subset, n),
+                            args=
+                            (U0, S0, unspliced_subset, spliced_subset, n), #if fit_scaling else
+                            #(U0, S0, unspliced_subset, spliced_subset, n, np.std(spliced_subset) / np.std(unspliced_subset)),
                             bounds=bounds,
                             method="Nelder-Mead")
         if fit_scaling:
@@ -126,15 +128,15 @@ def fit(unspliced, spliced, n=50, fit_scaling=True, fit_kappa=True, kappa_mode="
         sub = (unspliced > 0) | (spliced > 0)
         Pi[sub] = get_Pi_full(alpha, gamma, k[sub], U0, S0, Uk, (unspliced * scaling)[sub], spliced[sub], cost_scaling)
         lik = get_likelihood(alpha, gamma, U0, S0, Uk, spliced, unspliced * scaling,
-                             cost_scaling=cost_scaling, Pi=Pi, k=k)
+                             weight=cost_scaling, Pi=Pi, k=k)
 
         if fit_kappa:
-            ignore = .1  # removed bc the density approximation becomes tricky towards the exp function limit
 
+            ignore = .1  # removed bc the density approximation becomes tricky towards the limits
             upper = (Pi > ignore * Uk)
             lower = (Pi < (1 - ignore) * Uk)
             sub = upper & lower
-            # at least 30% of the cells need to be in the considered transient state
+            # at least 30% of the cells need to be in the considered transient state for kappa recovery
             if np.sum(k & sub) > 0.30 * np.sum(sub):
                 beta = get_kappa(alpha, 1, gamma, Pi, None, k & sub, "up", "u")
             elif np.sum((~k) & sub) > 0.30 * np.sum(upper & lower):
@@ -143,6 +145,7 @@ def fit(unspliced, spliced, n=50, fit_scaling=True, fit_kappa=True, kappa_mode="
                 beta = np.nan
                 lik = 0
         else:
+
             beta = 1
         alpha *= beta
         gamma *= beta
@@ -164,8 +167,8 @@ def plot_kinetics(alpha, gamma, spliced, unspliced, Uk, dist=True, scaling=1, k=
     Sk = S(alpha, gamma, U0, S0, Uk)
 
     plt.subplots(1, 1, figsize=(8, 6))
-    if dist:
-        distS, distU = D2_k(alpha, gamma, Uk, Pi, k, 0, 0, unspliced, spliced, scaling)
+    if dist and (Pi is not None):
+        distS, distU = dist_k(alpha, gamma, Uk, Pi, k, 0, 0, unspliced, spliced, scaling)
         d = distS ** 2 + distU ** 2
         plt.scatter(spliced, unspliced, c=np.log1p(d), s=10)
         plt.colorbar()
@@ -178,10 +181,11 @@ def plot_kinetics(alpha, gamma, spliced, unspliced, Uk, dist=True, scaling=1, k=
     plt.plot(s_down, u_range, color="orange")
 
     u_steady = np.array([0, u_range[s_down == np.max(s_down)]])
-    #plt.plot(u_steady / gamma, u_steady, color="grey", alpha=.5)
+    plt.plot(u_steady / gamma, u_steady, color="grey", alpha=.5)
 
-    plt.quiver(spliced[k], unspliced[k], (S(alpha, gamma, 0, 0, Pi) - spliced)[k], (Pi - unspliced)[k], **kwargs)
-    plt.quiver(spliced[~k], unspliced[~k], (S(0, gamma, Uk, Sk, np.array(Pi)) - spliced)[~k], (Pi - unspliced)[~k],
+    if Pi is not None:
+        plt.quiver(spliced[k], unspliced[k], (S(alpha, gamma, 0, 0, Pi) - spliced)[k], (Pi - unspliced)[k], **kwargs)
+        plt.quiver(spliced[~k], unspliced[~k], (S(0, gamma, Uk, Sk, np.array(Pi)) - spliced)[~k], (Pi - unspliced)[~k],
                **kwargs)
     plt.xlabel("spliced")
     plt.ylabel("unspliced")
