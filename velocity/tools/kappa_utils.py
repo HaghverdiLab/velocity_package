@@ -113,7 +113,7 @@ def get_slope(x, y):
     the fitted parallelogram.
     """
     kwargs = dict(bounds=[(0.1, None), (0.1, None), (0.1, None), (0.01, None)], x0=np.array([.1, 1, 1, .1]),
-                  options={"maxiter": 2000, 'disp': True}, tol=1e-8, method="COBYLA")
+                  options={"maxiter": 2000, 'disp': True}, tol=1e-8, method="Nelder-Mead")#"COBYLA")
     mn = op.minimize(cost_parallelogram, args=(x / np.max(x), y / np.max(y)), **kwargs)
     a, b, c, d = mn.x
     return (b * np.max(y)) / (a * np.max(x))

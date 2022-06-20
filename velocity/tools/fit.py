@@ -110,8 +110,8 @@ def fit(unspliced, spliced, n=50, fit_scaling=True, fit_kappa=True, kappa_mode="
         res1 = opt.minimize(cost_wrapper_fastPi_scaling if fit_scaling else cost_wrapper_fastPi,
                             x0=x0,
                             args=
-                            (U0, S0, unspliced_subset, spliced_subset, n), #if fit_scaling else
-                            #(U0, S0, unspliced_subset, spliced_subset, n, np.std(spliced_subset) / np.std(unspliced_subset)),
+                            (U0, S0, unspliced_subset, spliced_subset, n) if fit_scaling else
+                            (U0, S0, unspliced_subset, spliced_subset, n, np.std(spliced_subset) / np.std(unspliced_subset)),
                             bounds=bounds,
                             method="Nelder-Mead")
         if fit_scaling:
@@ -125,7 +125,7 @@ def fit(unspliced, spliced, n=50, fit_scaling=True, fit_kappa=True, kappa_mode="
         cost_scaling = np.std(spliced_subset) / np.std(unspliced_subset * scaling)
         k = ((unspliced * scaling) / spliced) > (Uk / S(alpha, gamma, U0, S0, Uk))
         Pi = np.zeros(unspliced.shape)
-        sub = (unspliced > 0) | (spliced > 0)
+        sub = (unspliced > 0) & (spliced > 0)
         Pi[sub] = get_Pi_full(alpha, gamma, k[sub], U0, S0, Uk, (unspliced * scaling)[sub], spliced[sub], cost_scaling)
         lik = get_likelihood(alpha, gamma, U0, S0, Uk, spliced, unspliced * scaling,
                              weight=cost_scaling, Pi=Pi, k=k)
@@ -190,3 +190,40 @@ def plot_kinetics(alpha, gamma, spliced, unspliced, Uk, dist=True, scaling=1, k=
     plt.xlabel("spliced")
     plt.ylabel("unspliced")
     plt.show()
+
+
+def get_velocity(adata, use_raw=True, key="fit", normalise=None):
+    """Recovers high-dimensional velocity vector from fitted parameters, and saves it under adata.layers["velocity"].
+
+    Parameters
+    ----------
+    adata: :class:'~anndata.AnnData'
+        Annotated data matrix.
+    use_raw: 'bool' (default: True)
+        Whether to use the raw counts for velocity calculation or the imputed ones (Ms, Mu)
+    key: 'str' (default: "fit")
+        Key under which the fitted parameters are saved in the anndata object.
+        For example with default key, we look for alpha under adata.var["fit_alpha"].
+    normalise: 'str' (default: None)
+        Whether to normalise the high-dimensional velocity vector. Multiple options are allowed:
+            - "L1" for L1-normalisation
+            - "L2" for L2-normalisation
+            - "std" for scaling s.t. the standard deviation is equal to 1.
+    Returns
+    -------
+
+    """
+    S, U = adata.layers["spliced" if use_raw else "Ms"], adata.layers["unspliced" if use_raw else "Mu"]
+    alpha, beta, gamma = np.array(adata.var[key + "_alpha"]), np.array(adata.var[key + "_beta"]), np.array(
+        adata.var[key + "_gamma"])
+    V = (beta * U) - (gamma * S)
+    u_steady, s_steady = alpha / beta, alpha / gamma
+    V[(U > u_steady) & (S > s_steady)] = 0
+    if normalise is not None:
+        if normalise == "L1":
+            V = normalize(V, norm='l1')
+        elif normalise == "L2":
+            V = normalize(V, norm='l2')
+        elif normalise == "std":
+            V /= (np.nanstd(V.flatten()))  # * 10)
+    adata.layers["velocity"] = V
