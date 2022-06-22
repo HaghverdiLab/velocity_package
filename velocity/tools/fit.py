@@ -155,8 +155,10 @@ def fit(unspliced, spliced, n=50, fit_scaling=True, fit_kappa=True, kappa_mode="
             beta = 1
         alpha *= beta
         gamma *= beta
-        plot_kinetics(alpha / beta, gamma / beta, spliced, unspliced * scaling, Uk, weight=cost_scaling, k=k, Pi=Pi,
-                      dist=False)
+        if True:
+            fig, ax = plt.subplots(1, 1, figsize=(6, 5))
+            plot_kinetics(alpha / beta, gamma / beta, spliced, unspliced * scaling, Uk, weight=cost_scaling, k=k, Pi=Pi,
+                            dist=False, ax=ax)
     else:
         alpha, beta, gamma, Uk, scaling, lik = np.nan, np.nan, np.nan, np.nan, 0, 0
         Pi = np.zeros(spliced.shape)
