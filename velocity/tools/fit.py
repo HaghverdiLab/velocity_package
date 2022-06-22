@@ -107,10 +107,10 @@ def fit(unspliced, spliced, n=50, fit_scaling=True, fit_kappa=True, kappa_mode="
         alpha, gamma = max_u, max_u / max_s
         # fit
         if fit_scaling:
-            x0 = np.array([alpha, gamma, alpha*.99, scaling])
+            x0 = np.array([alpha, gamma, alpha * .99, scaling])
             bounds = ((alpha / i, alpha * i), (gamma / i, gamma * i), (0, None), (scaling / 10, scaling * 10))
         else:
-            x0 = np.array([alpha, gamma, alpha*.99])
+            x0 = np.array([alpha, gamma, alpha * .99])
             bounds = ((alpha / i, alpha * i), (gamma / i, gamma * i), (0, None))
         res1 = opt.minimize(cost_wrapper_fastPi_scaling if fit_scaling else cost_wrapper_fastPi,
                             x0=x0,
@@ -123,12 +123,12 @@ def fit(unspliced, spliced, n=50, fit_scaling=True, fit_kappa=True, kappa_mode="
             alpha, gamma, Uk, scaling = res1.x
         else:
             alpha, gamma, Uk = res1.x
-        if Uk > alpha*.99:
-            Uk = alpha*.99
+        if Uk >= alpha * .99:
+            Uk = alpha * .99
 
         # get final assignments of the cells
         cost_scaling = np.std(spliced_subset) / np.std(unspliced_subset * scaling)
-        #k = np.zeros(spliced.shape)
+        # k = np.zeros(spliced.shape)
         k = (unspliced * scaling) > (gamma * spliced)
         # k = k.astype("bool")
         Pi = np.zeros(unspliced.shape)
@@ -155,7 +155,7 @@ def fit(unspliced, spliced, n=50, fit_scaling=True, fit_kappa=True, kappa_mode="
             beta = 1
         alpha *= beta
         gamma *= beta
-        plot_kinetics(alpha / beta, gamma / beta, spliced, unspliced * scaling, Uk, scaling=cost_scaling, k=k, Pi=Pi,
+        plot_kinetics(alpha / beta, gamma / beta, spliced, unspliced * scaling, Uk, weight=cost_scaling, k=k, Pi=Pi,
                       dist=False)
     else:
         alpha, beta, gamma, Uk, scaling, lik = np.nan, np.nan, np.nan, np.nan, 0, 0
@@ -169,27 +169,49 @@ kwargs = {"scale": 1, "angles": "xy", "scale_units": "xy", "edgecolors": "k",
           "linewidth": 0.01, "headlength": 4, "headwidth": 5, "headaxislength": 3, "alpha": .3}
 
 
-def plot_kinetics(alpha, gamma, spliced, unspliced, Uk, dist=True, scaling=1, k=None, Pi=None):
+def plot_kinetics_wrapper(adata, gene, use_raw=False, key="fit", n_cols=1, n_rows=1):
+    if (not isinstance(gene, list)) & (not isinstance(gene, np.ndarray)):
+        fig, ax = plt.subplots(1, 1, figsize=(6, 5))
+        gene = [gene]
+        axs = [ax]
+    elif len(gene) == 1:
+        fig, ax = plt.subplots(1, 1, figsize=(6, 5))
+        gene = [gene]
+        axs = [ax]
+    else:
+        fig, axs = plt.subplots(1, len(gene), figsize=(6*len(gene), 5))
+    for i, g in enumerate(gene):
+        unspliced, spliced = adata[:, g].layers["unspliced" if use_raw else "Mu"][:, 0], adata[:, g].layers[
+                                                                                             "spliced" if use_raw else "Ms"][
+                                                                                         :, 0]
+        alpha, gamma, beta = adata[:, g].var[key + "_alpha"][0], adata[:, g].var[key + "_gamma"][0], adata[:, g].var[
+            key + "_beta"][0]
+        Uk, scaling = adata[:, g].var[key + "_U_switch"][0], adata[:, g].var[key + "_scaling"][0]
+        plot_kinetics(alpha / beta, gamma / beta, spliced, unspliced * scaling, Uk, dist=True, weight=1, k=None,
+                      Pi=None,
+                      ax=axs[i])
+    # plt.colorbar()
+    plt.show()
+
+
+def plot_kinetics(alpha, gamma, spliced, unspliced, Uk, dist=True, weight=1, k=None, Pi=None, ax=None):
     U0, S0 = 0, 0
     Sk = S(alpha, gamma, U0, S0, Uk)
-
     if dist and (Pi is not None):
-        plt.subplots(1, 1, figsize=(8, 6))
-        distS, distU = dist_k(alpha, gamma, Uk, Pi, k, 0, 0, unspliced, spliced, scaling)
+        distS, distU = dist_k(alpha, gamma, Uk, Pi, k, 0, 0, unspliced, spliced, weight)
         d = distS ** 2 + distU ** 2
-        plt.scatter(spliced, unspliced, c=np.log1p(d), s=10)
-        plt.colorbar()
+        ax.scatter(spliced, unspliced, c=np.log1p(d), s=10)
+
     else:
-        plt.subplots(1, 1, figsize=(6, 6))
-        plt.scatter(spliced, unspliced, color="darkgrey", s=10)
+        ax.scatter(spliced, unspliced, color="darkgrey", s=10)
         # plt.scatter(spliced[k], unspliced[k], color="blue")
     u_range = np.arange(0, Uk + (Uk / 1000), Uk / 1000)
-    plt.plot(S(alpha, gamma, U0, S0, u_range), u_range, color="blue")
+    ax.plot(S(alpha, gamma, U0, S0, u_range), u_range, color="blue")
     s_down = S(0, gamma, Uk, Sk, u_range)
-    plt.plot(s_down, u_range, color="orange")
+    ax.plot(s_down, u_range, color="orange")
 
     u_steady = np.array([0, u_range[s_down == np.max(s_down)]], dtype=float)
-    plt.plot(u_steady / gamma, u_steady, color="grey", alpha=.5)
+    ax.plot(u_steady / gamma, u_steady, color="grey", alpha=.5)
 
     if Pi is not None:
         Pi[Pi > alpha] = alpha
@@ -197,11 +219,10 @@ def plot_kinetics(alpha, gamma, spliced, unspliced, Uk, dist=True, scaling=1, k=
         Si[k] = S(alpha, gamma, 0, 0, Pi[k])
         Si[~k] = S(0, gamma, Uk, Sk, Pi[~k])
 
-        plt.quiver(spliced, unspliced, (Si - spliced), (Pi - unspliced), **kwargs)
+        ax.quiver(spliced, unspliced, (Si - spliced), (Pi - unspliced), **kwargs)
 
-    plt.xlabel("spliced")
-    plt.ylabel("unspliced")
-    plt.show()
+    ax.set_xlabel("spliced")
+    ax.set_ylabel("unspliced")
 
 
 def get_velocity(adata, use_raw=True, key="fit", normalise=None, scale=True):

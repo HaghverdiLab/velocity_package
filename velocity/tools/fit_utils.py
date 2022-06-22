@@ -161,7 +161,7 @@ def cost_wrapper_fastPi(alpha_gamma_Uk, U0, S0, unspliced, spliced, n):
     alpha, gamma, Uk = alpha_gamma_Uk[0], alpha_gamma_Uk[1], alpha_gamma_Uk[2]
 
     penalty = 0
-    if Uk > alpha*.99:  # constraint: switching time point cannot be bigger than steady-state value
+    if Uk >= alpha*.99:  # constraint: switching time point cannot be bigger than steady-state value
         # note: this is a bit hacky but works
         penalty = 100 * (Uk - alpha)
         Uk = alpha*.99
