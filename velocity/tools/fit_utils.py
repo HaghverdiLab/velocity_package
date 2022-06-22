@@ -54,12 +54,12 @@ def dist(alpha, gamma, Pi, U0, S0, unspliced, spliced, weight=1):
 
     distS, distU = (S(alpha, gamma, U0, S0, Pi) - spliced), ((Pi - unspliced) * weight)
     if len(Pi) > 1:
-        i = np.isnan(distS)
+        i = np.isnan(distS)  # past the exponential function limit, we go straight down
         if np.sum(i) > 0:
-            distS[i], distU[i] = ((alpha / gamma) - spliced[i]), ((Pi[i] - unspliced[i]) * weight)
+            distS[i], distU[i] = 0, ((Pi[i] - unspliced[i]) * weight)
     else:
         if np.isnan(distS[0]):
-            distS, distU = ((alpha / gamma) - spliced), ((Pi - unspliced) * weight)
+            distS, distU = 0, ((Pi - unspliced) * weight)
     return distS, distU
 
 
@@ -100,7 +100,7 @@ def get_closest(U_ref, S_ref, unspliced, spliced, weight):
 
 
 def get_Pi_fast(alpha, gamma, U0, S0, Uk, unspliced, spliced, weight, n=100):
-    k = (unspliced / spliced) > (Uk / S(alpha, gamma, U0, S0, Uk))
+    k = (unspliced / spliced) > gamma
 
     Pi = np.zeros(unspliced.shape)
     D_u, D_s = np.zeros(unspliced.shape), np.zeros(unspliced.shape)
@@ -122,6 +122,7 @@ def get_Pi_fast(alpha, gamma, U0, S0, Uk, unspliced, spliced, weight, n=100):
 
 def cost_wrapper_full_Pi(Pi, alpha, gamma, U0, S0, unspliced, spliced, weight):
     Si = S(alpha, gamma, U0, S0, Pi)
+
     distS, distU = (Si - spliced), (Pi - unspliced) * weight
     return distS ** 2 + distU ** 2
 
@@ -130,25 +131,29 @@ def get_Pi_full(alpha, gamma, k, U0, S0, Uk, unspliced, spliced, weight):
     Pi = np.zeros(unspliced.shape)
 
     # up
-    up_Pi = np.zeros(np.sum(k))
-    for i in range(np.sum(k)):
-        res1 = opt.minimize(cost_wrapper_full_Pi,
-                            x0=unspliced[k][i],
-                            args=(alpha, gamma, U0, S0, unspliced[k][i], spliced[k][i], weight),
-                            method="Nelder-Mead")
-        up_Pi[i] = res1.x
-    Pi[k] = up_Pi
+    if np.sum(k)>0:
+        up_Pi = np.zeros(np.sum(k))
+        for i in range(np.sum(k)):
+            res1 = opt.minimize(cost_wrapper_full_Pi,
+                                x0=unspliced[k][i] if unspliced[k][i] < Uk else Uk*.9,
+                                args=(alpha, gamma, U0, S0, unspliced[k][i], spliced[k][i], weight),
+                                bounds=[(0, Uk)],
+                                method="Nelder-Mead")
+            up_Pi[i] = res1.x
+        Pi[k] = up_Pi
 
     # down
-    Sk = S(alpha, gamma, U0, S0, Uk)
-    down_Pi = np.zeros(np.sum(~k))
-    for i in range(np.sum(~k)):
-        res1 = opt.minimize(cost_wrapper_full_Pi,
-                            x0=unspliced[~k][i],
-                            args=(0, gamma, Uk, Sk, unspliced[~k][i], spliced[~k][i], weight),
-                            method="Nelder-Mead")
-        down_Pi[i] = res1.x
-    Pi[~k] = down_Pi
+    if np.sum(~k) > 0:
+        Sk = S(alpha, gamma, U0, S0, Uk)
+        down_Pi = np.zeros(np.sum(~k))
+        for i in range(np.sum(~k)):
+            res1 = opt.minimize(cost_wrapper_full_Pi,
+                                x0=unspliced[~k][i] if unspliced[~k][i] < Uk else Uk*.9,
+                                args=(0, gamma, Uk, Sk, unspliced[~k][i], spliced[~k][i], weight),
+                                bounds=[(0, Uk)],
+                                method="Nelder-Mead")
+            down_Pi[i] = res1.x
+        Pi[~k] = down_Pi
     return Pi
 
 
@@ -156,10 +161,10 @@ def cost_wrapper_fastPi(alpha_gamma_Uk, U0, S0, unspliced, spliced, n):
     alpha, gamma, Uk = alpha_gamma_Uk[0], alpha_gamma_Uk[1], alpha_gamma_Uk[2]
 
     penalty = 0
-    if Uk > alpha:  # constraint: switching time point cannot be bigger than steady-state value
+    if Uk > alpha*.99:  # constraint: switching time point cannot be bigger than steady-state value
         # note: this is a bit hacky but works
         penalty = 100 * (Uk - alpha)
-        Uk = alpha
+        Uk = alpha*.99
 
     weight = np.std(spliced) / np.std(unspliced)
 

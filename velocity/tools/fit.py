@@ -1,9 +1,10 @@
 from velocity.tools.fit_utils import *
 from velocity.tools.kappa import *
+from sklearn.preprocessing import normalize
 
 
 def recover_reaction_rate_pars(adata, use_raw, n=100, key="fit", fit_scaling=True, parallel=True, n_cores=None,
-                               n_parts=None):
+                               n_parts=None, inplace=True):
     unspliced, spliced = adata.layers["unspliced" if use_raw else "Mu"], adata.layers["spliced" if use_raw else "Ms"]
     if parallel:
         alpha, beta, gamma, U_switch, scaling, likelihood, Pi = fit_all_parallel(unspliced, spliced, n=n,
@@ -13,6 +14,8 @@ def recover_reaction_rate_pars(adata, use_raw, n=100, key="fit", fit_scaling=Tru
         alpha, beta, gamma, U_switch, scaling, likelihood, Pi = fit_all(unspliced, spliced, n=n,
                                                                         fit_scaling=fit_scaling)
 
+    if not inplace:
+        adata = adata.copy()
     # write to adata object
     adata.var[key + "_alpha"] = alpha
     adata.var[key + "_beta"] = beta
@@ -22,6 +25,8 @@ def recover_reaction_rate_pars(adata, use_raw, n=100, key="fit", fit_scaling=Tru
     adata.layers[key + "_Pi"] = Pi
     if fit_scaling:
         adata.var[key + "_scaling"] = scaling
+    if not inplace:
+        return adata
 
 
 def fit_all(unspliced, spliced, n=300, fit_scaling=True):
@@ -102,30 +107,32 @@ def fit(unspliced, spliced, n=50, fit_scaling=True, fit_kappa=True, kappa_mode="
         alpha, gamma = max_u, max_u / max_s
         # fit
         if fit_scaling:
-            x0 = np.array([alpha, gamma, alpha, scaling])
+            x0 = np.array([alpha, gamma, alpha*.99, scaling])
             bounds = ((alpha / i, alpha * i), (gamma / i, gamma * i), (0, None), (scaling / 10, scaling * 10))
         else:
-            x0 = np.array([alpha, gamma, alpha])
+            x0 = np.array([alpha, gamma, alpha*.99])
             bounds = ((alpha / i, alpha * i), (gamma / i, gamma * i), (0, None))
         res1 = opt.minimize(cost_wrapper_fastPi_scaling if fit_scaling else cost_wrapper_fastPi,
                             x0=x0,
                             args=
                             (U0, S0, unspliced_subset, spliced_subset, n) if fit_scaling else
-                            (U0, S0, unspliced_subset, spliced_subset, n, np.std(spliced_subset) / np.std(unspliced_subset)),
+                            (U0, S0, unspliced_subset, spliced_subset, n),
                             bounds=bounds,
-                            method="Nelder-Mead")
+                            method="Nelder-Mead", tol=1e-8)
         if fit_scaling:
             alpha, gamma, Uk, scaling = res1.x
         else:
             alpha, gamma, Uk = res1.x
-        if Uk > alpha:
-            Uk = alpha
+        if Uk > alpha*.99:
+            Uk = alpha*.99
 
         # get final assignments of the cells
         cost_scaling = np.std(spliced_subset) / np.std(unspliced_subset * scaling)
-        k = ((unspliced * scaling) / spliced) > (Uk / S(alpha, gamma, U0, S0, Uk))
+        #k = np.zeros(spliced.shape)
+        k = (unspliced * scaling) > (gamma * spliced)
+        # k = k.astype("bool")
         Pi = np.zeros(unspliced.shape)
-        sub = (unspliced > 0) & (spliced > 0)
+        sub = (unspliced > 0) | (spliced > 0)
         Pi[sub] = get_Pi_full(alpha, gamma, k[sub], U0, S0, Uk, (unspliced * scaling)[sub], spliced[sub], cost_scaling)
         lik = get_likelihood(alpha, gamma, U0, S0, Uk, spliced, unspliced * scaling,
                              weight=cost_scaling, Pi=Pi, k=k)
@@ -145,11 +152,11 @@ def fit(unspliced, spliced, n=50, fit_scaling=True, fit_kappa=True, kappa_mode="
                 beta = np.nan
                 lik = 0
         else:
-
             beta = 1
         alpha *= beta
         gamma *= beta
-        plot_kinetics(alpha/beta, gamma/beta, spliced, unspliced * scaling, Uk, scaling=cost_scaling, k=k, Pi=Pi)
+        plot_kinetics(alpha / beta, gamma / beta, spliced, unspliced * scaling, Uk, scaling=cost_scaling, k=k, Pi=Pi,
+                      dist=False)
     else:
         alpha, beta, gamma, Uk, scaling, lik = np.nan, np.nan, np.nan, np.nan, 0, 0
         Pi = np.zeros(spliced.shape)
@@ -166,33 +173,38 @@ def plot_kinetics(alpha, gamma, spliced, unspliced, Uk, dist=True, scaling=1, k=
     U0, S0 = 0, 0
     Sk = S(alpha, gamma, U0, S0, Uk)
 
-    plt.subplots(1, 1, figsize=(8, 6))
     if dist and (Pi is not None):
+        plt.subplots(1, 1, figsize=(8, 6))
         distS, distU = dist_k(alpha, gamma, Uk, Pi, k, 0, 0, unspliced, spliced, scaling)
         d = distS ** 2 + distU ** 2
         plt.scatter(spliced, unspliced, c=np.log1p(d), s=10)
         plt.colorbar()
     else:
-        plt.scatter(spliced, unspliced, color="orange")
-        plt.scatter(spliced[k], unspliced[k], color="blue")
-    u_range = np.arange(0, Uk + (Uk / 100), Uk / 100)
+        plt.subplots(1, 1, figsize=(6, 6))
+        plt.scatter(spliced, unspliced, color="darkgrey", s=10)
+        # plt.scatter(spliced[k], unspliced[k], color="blue")
+    u_range = np.arange(0, Uk + (Uk / 1000), Uk / 1000)
     plt.plot(S(alpha, gamma, U0, S0, u_range), u_range, color="blue")
     s_down = S(0, gamma, Uk, Sk, u_range)
     plt.plot(s_down, u_range, color="orange")
 
-    u_steady = np.array([0, u_range[s_down == np.max(s_down)]])
+    u_steady = np.array([0, u_range[s_down == np.max(s_down)]], dtype=float)
     plt.plot(u_steady / gamma, u_steady, color="grey", alpha=.5)
 
     if Pi is not None:
-        plt.quiver(spliced[k], unspliced[k], (S(alpha, gamma, 0, 0, Pi) - spliced)[k], (Pi - unspliced)[k], **kwargs)
-        plt.quiver(spliced[~k], unspliced[~k], (S(0, gamma, Uk, Sk, np.array(Pi)) - spliced)[~k], (Pi - unspliced)[~k],
-               **kwargs)
+        Pi[Pi > alpha] = alpha
+        Si = np.zeros(Pi.shape)
+        Si[k] = S(alpha, gamma, 0, 0, Pi[k])
+        Si[~k] = S(0, gamma, Uk, Sk, Pi[~k])
+
+        plt.quiver(spliced, unspliced, (Si - spliced), (Pi - unspliced), **kwargs)
+
     plt.xlabel("spliced")
     plt.ylabel("unspliced")
     plt.show()
 
 
-def get_velocity(adata, use_raw=True, key="fit", normalise=None):
+def get_velocity(adata, use_raw=True, key="fit", normalise=None, scale=True):
     """Recovers high-dimensional velocity vector from fitted parameters, and saves it under adata.layers["velocity"].
 
     Parameters
@@ -213,12 +225,21 @@ def get_velocity(adata, use_raw=True, key="fit", normalise=None):
     -------
 
     """
-    S, U = adata.layers["spliced" if use_raw else "Ms"], adata.layers["unspliced" if use_raw else "Mu"]
-    alpha, beta, gamma = np.array(adata.var[key + "_alpha"]), np.array(adata.var[key + "_beta"]), np.array(
-        adata.var[key + "_gamma"])
-    V = (beta * U) - (gamma * S)
-    u_steady, s_steady = alpha / beta, alpha / gamma
-    V[(U > u_steady) & (S > s_steady)] = 0
+    S_, U_ = adata.layers["spliced" if use_raw else "Ms"], adata.layers["unspliced" if use_raw else "Mu"]
+    alpha, beta, gamma, scaling = np.array(adata.var[key + "_alpha"]), np.array(adata.var[key + "_beta"]), np.array(
+        adata.var[key + "_gamma"]), np.array(adata.var[key + "_scaling"])
+
+    V = (beta * scaling * U_) - (gamma * S_) if scale else (beta * U_) - (gamma * S_)
+
+    if str(key + "_U_switch") in adata.var.columns:
+        u_steady = np.array(adata.var[key + "_U_switch"])
+        s_steady = S(alpha / beta, gamma / beta, 0, 0, u_steady)
+    elif str(key + "_t_") in adata.var.columns:
+        u_steady = u_t(alpha, beta, np.array(adata.var[key + "_t_"]), 0)
+        s_steady = S(alpha / beta, gamma / beta, 0, 0, u_steady)
+    else:
+        (u_steady, s_steady) = (alpha / beta, alpha / gamma)
+    V[(U_ > u_steady) & (S_ > s_steady)] = 0
     if normalise is not None:
         if normalise == "L1":
             V = normalize(V, norm='l1')
