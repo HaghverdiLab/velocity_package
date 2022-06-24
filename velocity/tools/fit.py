@@ -102,13 +102,13 @@ def fit(unspliced, spliced, n=50, fit_scaling=True, fit_kappa=True, kappa_mode="
     if np.sum(sub) > 100:  # recoverable
 
         # fit initialisation
-        U0, S0, i = 0, 0, 3
+        U0, S0, i = 0, 0, 10
         max_u = max_u * scaling
         alpha, gamma = max_u, max_u / max_s
         # fit
         if fit_scaling:
             x0 = np.array([alpha, gamma, alpha * .99, scaling])
-            bounds = ((alpha / i, alpha * i), (gamma / i, gamma * i), (0, None), (scaling / 10, scaling * 10))
+            bounds = ((alpha / i, alpha * i), (gamma / i, gamma * i), (0, None), (scaling / i, scaling * i))
         else:
             x0 = np.array([alpha, gamma, alpha * .99])
             bounds = ((alpha / i, alpha * i), (gamma / i, gamma * i), (0, None))
@@ -128,14 +128,12 @@ def fit(unspliced, spliced, n=50, fit_scaling=True, fit_kappa=True, kappa_mode="
 
         # get final assignments of the cells
         cost_scaling = np.std(spliced_subset) / np.std(unspliced_subset * scaling)
-        # k = np.zeros(spliced.shape)
         k = (unspliced * scaling) > (gamma * spliced)
-        # k = k.astype("bool")
         Pi = np.zeros(unspliced.shape)
         sub = (unspliced > 0) | (spliced > 0)
         Pi[sub] = get_Pi_full(alpha, gamma, k[sub], U0, S0, Uk, (unspliced * scaling)[sub], spliced[sub], cost_scaling)
-        lik = get_likelihood(alpha, gamma, U0, S0, Uk, spliced, unspliced * scaling,
-                             weight=cost_scaling, Pi=Pi, k=k)
+        lik = get_likelihood(alpha, gamma, U0, S0, Uk, spliced, unspliced * scaling, Pi=Pi, k=k)
+        print(lik)
 
         if fit_kappa:
 
@@ -159,6 +157,7 @@ def fit(unspliced, spliced, n=50, fit_scaling=True, fit_kappa=True, kappa_mode="
             fig, ax = plt.subplots(1, 1, figsize=(6, 5))
             plot_kinetics(alpha / beta, gamma / beta, spliced, unspliced * scaling, Uk, weight=cost_scaling, k=k, Pi=Pi,
                             dist=False, ax=ax)
+            plt.show()
     else:
         alpha, beta, gamma, Uk, scaling, lik = np.nan, np.nan, np.nan, np.nan, 0, 0
         Pi = np.zeros(spliced.shape)

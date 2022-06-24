@@ -100,7 +100,7 @@ def get_closest(U_ref, S_ref, unspliced, spliced, weight):
 
 
 def get_Pi_fast(alpha, gamma, U0, S0, Uk, unspliced, spliced, weight, n=100):
-    k = (unspliced / spliced) > gamma
+    k = unspliced > gamma * spliced
 
     Pi = np.zeros(unspliced.shape)
     D_u, D_s = np.zeros(unspliced.shape), np.zeros(unspliced.shape)
@@ -131,11 +131,11 @@ def get_Pi_full(alpha, gamma, k, U0, S0, Uk, unspliced, spliced, weight):
     Pi = np.zeros(unspliced.shape)
 
     # up
-    if np.sum(k)>0:
+    if np.sum(k) > 0:
         up_Pi = np.zeros(np.sum(k))
         for i in range(np.sum(k)):
             res1 = opt.minimize(cost_wrapper_full_Pi,
-                                x0=unspliced[k][i] if unspliced[k][i] < Uk else Uk*.9,
+                                x0=unspliced[k][i] if unspliced[k][i] < Uk else Uk * .9,
                                 args=(alpha, gamma, U0, S0, unspliced[k][i], spliced[k][i], weight),
                                 bounds=[(0, Uk)],
                                 method="Nelder-Mead")
@@ -148,7 +148,7 @@ def get_Pi_full(alpha, gamma, k, U0, S0, Uk, unspliced, spliced, weight):
         down_Pi = np.zeros(np.sum(~k))
         for i in range(np.sum(~k)):
             res1 = opt.minimize(cost_wrapper_full_Pi,
-                                x0=unspliced[~k][i] if unspliced[~k][i] < Uk else Uk*.9,
+                                x0=unspliced[~k][i] if unspliced[~k][i] < Uk else Uk * .9,
                                 args=(0, gamma, Uk, Sk, unspliced[~k][i], spliced[~k][i], weight),
                                 bounds=[(0, Uk)],
                                 method="Nelder-Mead")
@@ -161,10 +161,10 @@ def cost_wrapper_fastPi(alpha_gamma_Uk, U0, S0, unspliced, spliced, n):
     alpha, gamma, Uk = alpha_gamma_Uk[0], alpha_gamma_Uk[1], alpha_gamma_Uk[2]
 
     penalty = 0
-    if Uk >= alpha*.99:  # constraint: switching time point cannot be bigger than steady-state value
+    if Uk >= alpha * .99:  # constraint: switching time point cannot be bigger than steady-state value
         # note: this is a bit hacky but works
         penalty = 100 * (Uk - alpha)
-        Uk = alpha*.99
+        Uk = alpha * .99
 
     weight = np.std(spliced) / np.std(unspliced)
 
@@ -180,12 +180,23 @@ def cost_wrapper_fastPi_scaling(alpha_gamma_Uk, U0, S0, unspliced, spliced, n):
     return cost_wrapper_fastPi([alpha, gamma, Uk], U0, S0, u_s, spliced, n)
 
 
-def get_likelihood(alpha, gamma, U0, S0, Uk, spliced, unspliced, weight, k, Pi):
-    distS, distU = dist_k(alpha, gamma, Uk, Pi, k, U0, S0, unspliced, spliced, weight)
+import matplotlib.pyplot as plt
 
-    std_s, std_u = np.std(spliced * weight), np.std(unspliced)
+
+def get_likelihood(alpha, gamma, U0, S0, Uk, spliced, unspliced, k, Pi):
+    distS, distU = dist_k(alpha, gamma, Uk, Pi, k, U0, S0, unspliced, spliced, weight=1)
+
+    std_s, std_u = np.std(spliced), np.std(unspliced)
+    #plt.hist(distS, bins=50)
+    #plt.hist(distU, bins=50, alpha=.5)
+    #plt.show()
+    #print(np.std(distS), np.std(distU))
     distS /= std_s
     distU /= std_u
+    #plt.hist(distS, bins=50)
+    #plt.hist(distU, bins=50, alpha=.5)
+    #plt.show()
+    #print(np.std(distS), np.std(distU))
 
     distX = distU ** 2 + distS ** 2
     varx = np.var(np.sign(distS) * np.sqrt(distX))
