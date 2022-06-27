@@ -48,5 +48,3 @@ def impute_counts(adata, n_neighbours = 30, n_pcs = 15, layer_NN = 'spliced', un
     # add imputed counts to adata
     adata.layers["Ms"]=Ms
     adata.layers["Mu"]=Mu
-    
-    return us_genes
