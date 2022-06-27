@@ -1,4 +1,5 @@
 import numpy as np
+import scipy
 
 def normalise_layers(adata, mode='combined', norm='L1', unspliced_layer='unspliced', spliced_layer='spliced', total_counts=None):
     
