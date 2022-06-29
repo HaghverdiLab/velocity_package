@@ -84,7 +84,18 @@ def get_kappa_scVelo(adata, gene, mode="u", reg="up", key="fit"):
     return k
 
 
-def get_kappa(alpha, beta, gamma, ut, st, assignments, reg, mode):
-    t_dist, f = get_f_and_delta_t(ut, st, alpha, beta, gamma, assignments, reg, mode)
-    k = get_slope(t_dist, f)
-    return k
+def get_kappa(alpha, beta, gamma, ut, st,u_switch, k, mode):
+    ignore = .1  # removed bc the density approximation becomes tricky towards the limits
+    upper = (ut > ignore * u_switch)
+    lower = (ut < (1 - ignore) * u_switch)
+    sub = upper & lower
+    # at least 30% of the cells need to be in the considered transient state for kappa recovery
+    if np.sum((~k) & sub) > 0.30 * np.sum(sub):
+        t_dist, f = get_f_and_delta_t(ut, st, 0, beta, gamma, (~k) & sub, "down", mode)
+        kappa = get_slope(t_dist, f)
+    elif np.sum(k & sub) > 0.30 * np.sum(sub):
+        t_dist, f = get_f_and_delta_t(ut, st, alpha, beta, gamma, k & sub, "up", mode)
+        kappa = get_slope(t_dist, f)
+    else:
+        kappa = np.nan
+    return kappa

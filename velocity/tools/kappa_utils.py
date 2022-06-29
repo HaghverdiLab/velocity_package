@@ -57,8 +57,8 @@ def f_s(alpha, beta, gamma, u, s, u0, s0):
     """
     Same as f_u() but when starting from s(t) (see supplementary note S1).
     """
-    num = s + ((alpha - (beta * u)) / (gamma - beta)) - (alpha / gamma)
-    denum = s0 + ((alpha - (beta * u0)) / (gamma - beta)) - (alpha / gamma)
+    num = s + ((alpha - (beta * u)) / (gamma - beta)) - (alpha / beta)
+    denum = s0 + ((alpha - (beta * u0)) / (gamma - beta)) - (alpha / beta)
     s_adj = np.log(num / denum)
     return -1 / gamma * s_adj
 
