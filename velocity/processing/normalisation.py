@@ -32,7 +32,6 @@ def normalise_layers(adata, mode='combined', norm='L1', unspliced_layer='unsplic
 
     # get total counts and normalize
     if total_counts is not None:
-        print("total_counts given")
         mean_counts = int(np.mean(total_counts))
         adata.layers[unspliced_layer] = np.asarray(adata.layers[unspliced_layer]/total_counts*mean_counts)
         adata.layers[spliced_layer] = np.asarray(adata.layers[spliced_layer]/total_counts*mean_counts)
