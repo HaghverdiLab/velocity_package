@@ -4,15 +4,15 @@ from sklearn.preprocessing import normalize
 
 
 def recover_reaction_rate_pars(adata, use_raw, n=100, key="fit", fit_scaling=True, parallel=True, n_cores=None,
-                               n_parts=None, inplace=True):
+                               n_parts=None, inplace=True, fit_kappa=True):
     unspliced, spliced = adata.layers["unspliced" if use_raw else "Mu"], adata.layers["spliced" if use_raw else "Ms"]
     if parallel:
         alpha, beta, gamma, U_switch, scaling, likelihood, Pi = fit_all_parallel(unspliced, spliced, n=n,
                                                                                  n_cores=n_cores, n_parts=n_parts,
-                                                                                 fit_scaling=fit_scaling)
+                                                                                 fit_scaling=fit_scaling, fit_kappa=fit_kappa)
     else:
         alpha, beta, gamma, U_switch, scaling, likelihood, Pi = fit_all(unspliced, spliced, n=n,
-                                                                        fit_scaling=fit_scaling)
+                                                                        fit_scaling=fit_scaling, fit_kappa=fit_kappa)
 
     if not inplace:
         adata = adata.copy()
@@ -29,7 +29,7 @@ def recover_reaction_rate_pars(adata, use_raw, n=100, key="fit", fit_scaling=Tru
         return adata
 
 
-def fit_all(unspliced, spliced, n=300, fit_scaling=True):
+def fit_all(unspliced, spliced, n=300, fit_scaling=True, fit_kappa=True):
     n_entries = unspliced.shape[1]
     alpha, beta, gamma, U_switch = np.zeros(n_entries), np.zeros(n_entries), np.zeros(n_entries), np.zeros(n_entries)
     likelihood, scaling = np.zeros(n_entries), np.ones(n_entries)
@@ -38,13 +38,13 @@ def fit_all(unspliced, spliced, n=300, fit_scaling=True):
     for i in range(n_entries):
         U_, S_ = unspliced[:, i], spliced[:, i]
         Ms = np.max(S_)
-        a, b, g, Uk, sc, lik, Pi_ = fit(U_ / Ms, S_ / Ms, n=n, fit_scaling=fit_scaling)
+        a, b, g, Uk, sc, lik, Pi_ = fit(U_ / Ms, S_ / Ms, n=n, fit_scaling=fit_scaling, fit_kappa=fit_kappa)
         alpha[i], beta[i], gamma[i], U_switch[i], scaling[i], likelihood[i] = a, b, g, Uk, sc, lik
         Pi[:, i] = Pi_
     return alpha, beta, gamma, U_switch, scaling, likelihood, Pi
 
 
-def fit_all_parallel(unspliced, spliced, n=100, n_cores=None, n_parts=None, fit_scaling=True):
+def fit_all_parallel(unspliced, spliced, n=100, n_cores=None, n_parts=None, fit_scaling=True, fit_kappa=True):
     from joblib import Parallel, delayed
 
     n_entries = unspliced.shape[1]
@@ -75,7 +75,7 @@ def fit_all_parallel(unspliced, spliced, n=100, n_cores=None, n_parts=None, fit_
     def fit_helper(pars_):
         out = []
         for p in pars_:
-            out.append(fit(p[0], p[1], n, fit_scaling))
+            out.append(fit(p[0], p[1], n, fit_scaling, fit_kappa))
         return out
 
     result = Parallel(n_jobs=8)(delayed(fit_helper)(pars[i]) for i in output)
@@ -92,68 +92,67 @@ def fit_all_parallel(unspliced, spliced, n=100, n_cores=None, n_parts=None, fit_
     return alpha, beta, gamma, U_switch, scaling, likelihood, Pi
 
 
+def fit_alpha_gamma(spliced, unspliced, fit_scaling, n):
+    scaling = np.std(spliced) / np.std(unspliced) if fit_scaling else 1
+    U0, S0, i = 0, 0, 10
+    max_u = np.max(unspliced) * scaling
+    alpha, gamma = max_u, max_u / np.max(spliced)
+    if fit_scaling:
+        x0 = np.array([alpha, gamma, alpha * .99, scaling])
+        bounds = ((alpha / i, alpha * i), (gamma / i, gamma * i), (0, None), (scaling / i, scaling * i))
+    else:
+        x0 = np.array([alpha, gamma, alpha * .99])
+        bounds = ((alpha / i, alpha * i), (gamma / i, gamma * i), (0, None))
+    res1 = opt.minimize(cost_wrapper_fastPi_scaling if fit_scaling else cost_wrapper_fastPi,
+                        x0=x0,
+                        args=
+                        (U0, S0, unspliced, spliced, n) if fit_scaling else
+                        (U0, S0, unspliced, spliced, n),
+                        bounds=bounds,
+                        method="Nelder-Mead", tol=1e-8)
+    if fit_scaling:
+        alpha, gamma, Uk, scaling = res1.x
+    else:
+        alpha, gamma, Uk = res1.x
+    if Uk >= alpha * .99:
+        Uk = alpha * .99
+
+    return alpha, gamma, Uk, scaling
+
+
+def fit_full_Pi(alpha, gamma, scaling, Uk, spliced, unspliced, k):
+    weight = np.std(spliced) / np.std(unspliced)
+    Pi = np.zeros(unspliced.shape)
+    sub = (unspliced > 0) | (spliced > 0)
+    Pi[sub] = get_Pi_full(alpha, gamma, k[sub], 0, 0, Uk, unspliced[sub], spliced[sub], weight)
+    return Pi
+
+
 def fit(unspliced, spliced, n=50, fit_scaling=True, fit_kappa=True, kappa_mode="u"):
     max_u, max_s = np.quantile(unspliced, .99), np.quantile(spliced, .99)
-    sub = (unspliced > 0) & (spliced > 0) & ((unspliced > 0.05 * max_u) | (spliced > 0.05 * max_s))
+    sub = (unspliced > 0) & (spliced > 0) & ((unspliced > 0.1 * max_u) | (spliced > 0.1 * max_s))
 
     # subset of cells is used for fitting
     spliced_subset, unspliced_subset = spliced[sub], unspliced[sub]
-    scaling = np.std(spliced_subset) / np.std(unspliced_subset) if fit_scaling else 1
     if np.sum(sub) > 100:  # recoverable
 
-        # fit initialisation
-        U0, S0, i = 0, 0, 10
-        max_u = max_u * scaling
-        alpha, gamma = max_u, max_u / max_s
-        # fit
-        if fit_scaling:
-            x0 = np.array([alpha, gamma, alpha * .99, scaling])
-            bounds = ((alpha / i, alpha * i), (gamma / i, gamma * i), (0, None), (scaling / i, scaling * i))
-        else:
-            x0 = np.array([alpha, gamma, alpha * .99])
-            bounds = ((alpha / i, alpha * i), (gamma / i, gamma * i), (0, None))
-        res1 = opt.minimize(cost_wrapper_fastPi_scaling if fit_scaling else cost_wrapper_fastPi,
-                            x0=x0,
-                            args=
-                            (U0, S0, unspliced_subset, spliced_subset, n) if fit_scaling else
-                            (U0, S0, unspliced_subset, spliced_subset, n),
-                            bounds=bounds,
-                            method="Nelder-Mead", tol=1e-8)
-        if fit_scaling:
-            alpha, gamma, Uk, scaling = res1.x
-        else:
-            alpha, gamma, Uk = res1.x
-        if Uk >= alpha * .99:
-            Uk = alpha * .99
+        # fit alpha, gamma, Uk, scaling
+        alpha, gamma, Uk, scaling = fit_alpha_gamma(spliced_subset, unspliced_subset, fit_scaling, n)
 
         # get final assignments of the cells
-        cost_scaling = np.std(spliced_subset) / np.std(unspliced_subset * scaling)
         k = (unspliced * scaling) > (gamma * spliced)
-        Pi = np.zeros(unspliced.shape)
-        sub = (unspliced > 0) | (spliced > 0)
-        Pi[sub] = get_Pi_full(alpha, gamma, k[sub], U0, S0, Uk, (unspliced * scaling)[sub], spliced[sub], cost_scaling)
-        lik = get_likelihood(alpha, gamma, U0, S0, Uk, spliced, unspliced * scaling, Pi=Pi, k=k)
-        print(lik)
+        Pi = fit_full_Pi(alpha, gamma, scaling, Uk, spliced, unspliced * scaling, k)
+        # get likelihood
+        lik = get_likelihood(alpha, gamma, 0, 0, Uk, spliced, unspliced * scaling, Pi=Pi, k=k)
 
+        # get scaling parameter kappa
         if fit_kappa:
-
-            ignore = .1  # removed bc the density approximation becomes tricky towards the limits
-            upper = (Pi > ignore * Uk)
-            lower = (Pi < (1 - ignore) * Uk)
-            sub = upper & lower
-            # at least 30% of the cells need to be in the considered transient state for kappa recovery
-            if np.sum(k & sub) > 0.30 * np.sum(sub):
-                beta = get_kappa(alpha, 1, gamma, Pi, None, k & sub, "up", "u")
-            elif np.sum((~k) & sub) > 0.30 * np.sum(upper & lower):
-                beta = get_kappa(0, 1, gamma, Pi, None, (~k) & sub, "down", "u")
-            else:
-                beta = np.nan
-                lik = 0
+            beta = get_kappa(alpha=alpha, beta=1, gamma=gamma, ut=Pi, st=None, u_switch=Uk, k=k, mode="u")
+            alpha, gamma = alpha*beta, gamma*beta
         else:
             beta = 1
-        alpha *= beta
-        gamma *= beta
-        if True:
+
+        if False:
             fig, ax = plt.subplots(1, 1, figsize=(6, 5))
             plot_kinetics(alpha / beta, gamma / beta, spliced, unspliced * scaling, Uk, weight=cost_scaling, k=k, Pi=Pi,
                             dist=False, ax=ax)

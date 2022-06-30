@@ -26,6 +26,8 @@ def vector_distance(v_t, v_0, metric="cosine"):
             [np.dot(v_0[i], v_t[i].T) / (np.linalg.norm(v_0[i]) * np.linalg.norm(v_t[i])) for i in range(v_t.shape[0])])
     if metric == "norm_diff":
         return np.array([np.linalg.norm(v_0[i]) - np.linalg.norm(v_t[i]) for i in range(v_t.shape[0])])
+    if metric == "diff_norm":
+        return np.array([np.linalg.norm(v_0[i]-v_t[i]) for i in range(v_t.shape[0])])
     else:
         print("Unknown value chosen for metric. Options include \"cosine\" for cosine distance and \"norm_diff\" "
               "for the difference in vector norm.")

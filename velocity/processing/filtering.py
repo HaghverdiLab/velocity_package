@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+import scipy
 
 ### TO-DO:
 ### Select layer in HVGs?
@@ -32,6 +33,7 @@ def pearson_residuals(counts, theta=100):
     z[z < -np.sqrt(n)] = -np.sqrt(n)
 
     return z
+
 
 def get_hvgs(adata, no_of_hvgs=2000, theta=100, layer='spliced'):
     '''
@@ -68,33 +70,33 @@ def get_hvgs(adata, no_of_hvgs=2000, theta=100, layer='spliced'):
 
 def get_high_us_genes(adata, minlim_u=3, minlim_s=3, unspliced_layer='unspliced', spliced_layer='spliced'):
     '''
-    Function to select genes that have spliced and unspliced counts above a certain threshold. Genes of 
-    which the maximum u and s count is above a set threshold are selected. Threshold varies per dataset 
+    Function to select genes that have spliced and unspliced counts above a certain threshold. Genes of
+    which the maximum u and s count is above a set threshold are selected. Threshold varies per dataset
     and influences the numbers of genes that are selected.
-    
+
     Parameters
     ----------
     adata
         Annotated data matrix
     minlim_u: `int` (default: 3)
-        Threshold above which the maximum unspliced counts of a gene should fall to be included in the 
+        Threshold above which the maximum unspliced counts of a gene should fall to be included in the
         list of high US genes.
     minlim_s: `int` (default: 3)
-        Threshold above which the maximum spliced counts of a gene should fall to be included in the 
+        Threshold above which the maximum spliced counts of a gene should fall to be included in the
         list of high US genes.
     unspliced_layer: `str` (default: 'unspliced')
         Name of layer that contains the unspliced counts.
     spliced_layer: `str` (default: 'spliced')
         Name of layer that contains the spliced counts.
     '''
-    
+
     # test if layers are not sparse but dense
     for layer in [unspliced_layer, spliced_layer]:
         if scipy.sparse.issparse(adata.layers[layer]): adata.layers[layer] = adata.layers[layer].todense()
-    
+
     # get high US genes
     u_genes = np.max(adata.layers[unspliced_layer], axis=0) > minlim_u
     s_genes = np.max(adata.layers[spliced_layer], axis=0) > minlim_s
     us_genes = adata.var_names[np.array(u_genes & s_genes).flatten()].values
-    
+
     return us_genes

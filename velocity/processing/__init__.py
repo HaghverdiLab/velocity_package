@@ -1,5 +1,3 @@
-import normalisation
-import imputation
-import filtering
-import imputation
-import normalisation
+import velocity.processing.filtering
+import velocity.processing.imputation
+import velocity.processing.normalisation
