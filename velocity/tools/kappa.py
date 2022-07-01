@@ -90,10 +90,10 @@ def get_kappa(alpha, beta, gamma, ut, st,u_switch, k, mode):
     lower = (ut < (1 - ignore) * u_switch)
     sub = upper & lower
     # at least 30% of the cells need to be in the considered transient state for kappa recovery
-    if np.sum((~k) & sub) > 0.30 * np.sum(sub):
+    if np.sum((~k) & sub) > 0.40 * np.sum(sub):
         t_dist, f = get_f_and_delta_t(ut, st, 0, beta, gamma, (~k) & sub, "down", mode)
         kappa = get_slope(t_dist, f)
-    elif np.sum(k & sub) > 0.30 * np.sum(sub):
+    elif np.sum(k & sub) > 0.40 * np.sum(sub):
         t_dist, f = get_f_and_delta_t(ut, st, alpha, beta, gamma, k & sub, "up", mode)
         kappa = get_slope(t_dist, f)
     else:

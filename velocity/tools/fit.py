@@ -9,7 +9,8 @@ def recover_reaction_rate_pars(adata, use_raw, n=100, key="fit", fit_scaling=Tru
     if parallel:
         alpha, beta, gamma, U_switch, scaling, likelihood, Pi = fit_all_parallel(unspliced, spliced, n=n,
                                                                                  n_cores=n_cores, n_parts=n_parts,
-                                                                                 fit_scaling=fit_scaling, fit_kappa=fit_kappa)
+                                                                                 fit_scaling=fit_scaling,
+                                                                                 fit_kappa=fit_kappa)
     else:
         alpha, beta, gamma, U_switch, scaling, likelihood, Pi = fit_all(unspliced, spliced, n=n,
                                                                         fit_scaling=fit_scaling, fit_kappa=fit_kappa)
@@ -29,7 +30,7 @@ def recover_reaction_rate_pars(adata, use_raw, n=100, key="fit", fit_scaling=Tru
         return adata
 
 
-def fit_all(unspliced, spliced, n=300, fit_scaling=True, fit_kappa=True):
+def fit_all(unspliced, spliced, n=100, fit_scaling=True, fit_kappa=True):
     n_entries = unspliced.shape[1]
     alpha, beta, gamma, U_switch = np.zeros(n_entries), np.zeros(n_entries), np.zeros(n_entries), np.zeros(n_entries)
     likelihood, scaling = np.zeros(n_entries), np.ones(n_entries)
@@ -94,7 +95,7 @@ def fit_all_parallel(unspliced, spliced, n=100, n_cores=None, n_parts=None, fit_
 
 def fit_alpha_gamma(spliced, unspliced, fit_scaling, n):
     scaling = np.std(spliced) / np.std(unspliced) if fit_scaling else 1
-    U0, S0, i = 0, 0, 10
+    U0, S0, i = 0, 0, 4
     max_u = np.max(unspliced) * scaling
     alpha, gamma = max_u, max_u / np.max(spliced)
     if fit_scaling:
@@ -152,9 +153,10 @@ def fit(unspliced, spliced, n=50, fit_scaling=True, fit_kappa=True, kappa_mode="
         else:
             beta = 1
 
-        if False:
+        if True:
             fig, ax = plt.subplots(1, 1, figsize=(6, 5))
-            plot_kinetics(alpha / beta, gamma / beta, spliced, unspliced * scaling, Uk, weight=cost_scaling, k=k, Pi=Pi,
+            plot_kinetics(alpha / beta, gamma / beta, spliced, unspliced * scaling, Uk,
+                          weight=np.std(unspliced * scaling)/np.std(spliced), k=k, Pi=Pi,
                             dist=False, ax=ax)
             plt.show()
     else:
@@ -169,7 +171,7 @@ kwargs = {"scale": 1, "angles": "xy", "scale_units": "xy", "edgecolors": "k",
           "linewidth": 0.01, "headlength": 4, "headwidth": 5, "headaxislength": 3, "alpha": .3}
 
 
-def plot_kinetics_wrapper(adata, gene, use_raw=False, key="fit", n_cols=1, n_rows=1):
+def plot_kinetics_wrapper(adata, gene, use_raw=False, key="fit", n_cols=1, n_rows=1, c=None):
     if (not isinstance(gene, list)) & (not isinstance(gene, np.ndarray)):
         fig, ax = plt.subplots(1, 1, figsize=(6, 5))
         gene = [gene]
@@ -189,12 +191,12 @@ def plot_kinetics_wrapper(adata, gene, use_raw=False, key="fit", n_cols=1, n_row
         Uk, scaling = adata[:, g].var[key + "_U_switch"][0], adata[:, g].var[key + "_scaling"][0]
         plot_kinetics(alpha / beta, gamma / beta, spliced, unspliced * scaling, Uk, dist=True, weight=1, k=None,
                       Pi=None,
-                      ax=axs[i])
+                      ax=axs[i], c=c, title = gene[i])
     # plt.colorbar()
     plt.show()
 
 
-def plot_kinetics(alpha, gamma, spliced, unspliced, Uk, dist=True, weight=1, k=None, Pi=None, ax=None):
+def plot_kinetics(alpha, gamma, spliced, unspliced, Uk, dist=True, weight=1, k=None, Pi=None, ax=None, c=None, title=None):
     U0, S0 = 0, 0
     Sk = S(alpha, gamma, U0, S0, Uk)
     if dist and (Pi is not None):
@@ -203,7 +205,10 @@ def plot_kinetics(alpha, gamma, spliced, unspliced, Uk, dist=True, weight=1, k=N
         ax.scatter(spliced, unspliced, c=np.log1p(d), s=10)
 
     else:
-        ax.scatter(spliced, unspliced, color="darkgrey", s=10)
+        ax.scatter(spliced, unspliced,
+                   color="darkgrey" if c is None else None,
+                   c = c if c is not None else None,
+                   s=10)
         # plt.scatter(spliced[k], unspliced[k], color="blue")
     u_range = np.arange(0, Uk + (Uk / 1000), Uk / 1000)
     ax.plot(S(alpha, gamma, U0, S0, u_range), u_range, color="blue")
@@ -223,6 +228,7 @@ def plot_kinetics(alpha, gamma, spliced, unspliced, Uk, dist=True, weight=1, k=N
 
     ax.set_xlabel("spliced")
     ax.set_ylabel("unspliced")
+    ax.set_title(title)
 
 
 def get_velocity(adata, use_raw=True, key="fit", normalise=None, scale=True):
