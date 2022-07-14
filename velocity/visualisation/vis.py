@@ -49,16 +49,14 @@ def nystroem_project(Y_data, X_current, X_future, n_neighbors=100, row_norm=True
     print("Projecting velocities using Nyström approach.")
 
     NN = cKDTree(X_current).query(x=X_future, k=n_neighbors, n_jobs=1)[1]
-    # get left row normalisation factors
+    # get row normalisation factors
     P = d2p_NN(pairwise_distances(X_current, metric="euclidean"), NN, row_norm=False)
-    D_left = np.diag(1 / np.sqrt(np.sum(P, axis=1)))
+    D = np.diag(1 / np.sqrt(np.sum(P, axis=1)))
     # compute trans P matrix from old to new
     d2 = pairwise_distances(X_future, X_current, metric="euclidean")
     P_2 = d2p_NN(d2, NN, row_norm=False)
-    # right normalisation factor
-    D_right = np.diag(1 / np.sqrt(np.sum(P_2, axis=1)))
     # normalise trans P matrix
-    P_2 = np.dot(np.dot(D_left, P_2), D_right)
+    P_2 = np.dot(np.dot(D, P_2), D)
     Y_future = np.dot(P_2, Y_data)
     return Y_future
 

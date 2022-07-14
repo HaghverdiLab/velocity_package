@@ -149,15 +149,15 @@ def fit(unspliced, spliced, n=50, fit_scaling=True, fit_kappa=True, kappa_mode="
         # get scaling parameter kappa
         if fit_kappa:
             beta = get_kappa(alpha=alpha, beta=1, gamma=gamma, ut=Pi, st=None, u_switch=Uk, k=k, mode="u")
-            alpha, gamma = alpha*beta, gamma*beta
+            alpha, gamma = alpha * beta, gamma * beta
         else:
             beta = 1
 
         if True:
             fig, ax = plt.subplots(1, 1, figsize=(6, 5))
             plot_kinetics(alpha / beta, gamma / beta, spliced, unspliced * scaling, Uk,
-                          weight=np.std(unspliced * scaling)/np.std(spliced), k=k, Pi=Pi,
-                            dist=False, ax=ax)
+                          weight=np.std(unspliced * scaling) / np.std(spliced), k=k, Pi=Pi,
+                          dist=False, ax=ax)
             plt.show()
     else:
         alpha, beta, gamma, Uk, scaling, lik = np.nan, np.nan, np.nan, np.nan, 0, 0
@@ -181,7 +181,7 @@ def plot_kinetics_wrapper(adata, gene, use_raw=False, key="fit", n_cols=1, n_row
         gene = [gene]
         axs = [ax]
     else:
-        fig, axs = plt.subplots(1, len(gene), figsize=(6*len(gene), 5))
+        fig, axs = plt.subplots(1, len(gene), figsize=(4 * len(gene), 6))
     for i, g in enumerate(gene):
         unspliced, spliced = adata[:, g].layers["unspliced" if use_raw else "Mu"][:, 0], adata[:, g].layers[
                                                                                              "spliced" if use_raw else "Ms"][
@@ -189,26 +189,29 @@ def plot_kinetics_wrapper(adata, gene, use_raw=False, key="fit", n_cols=1, n_row
         alpha, gamma, beta = adata[:, g].var[key + "_alpha"][0], adata[:, g].var[key + "_gamma"][0], adata[:, g].var[
             key + "_beta"][0]
         Uk, scaling = adata[:, g].var[key + "_U_switch"][0], adata[:, g].var[key + "_scaling"][0]
-        plot_kinetics(alpha / beta, gamma / beta, spliced, unspliced * scaling, Uk, dist=True, weight=1, k=None,
+        sub = (unspliced > 0) & (spliced > 0)
+        plot_kinetics(alpha / beta, gamma / beta, spliced[sub], unspliced[sub] * scaling, Uk,
+                      dist=True, weight=1, k=None,
                       Pi=None,
-                      ax=axs[i], c=c, title = gene[i])
+                      ax=axs[i], c=c[sub], title=gene[i])
     # plt.colorbar()
-    plt.show()
+    # plt.show()
 
 
-def plot_kinetics(alpha, gamma, spliced, unspliced, Uk, dist=True, weight=1, k=None, Pi=None, ax=None, c=None, title=None):
+def plot_kinetics(alpha, gamma, spliced, unspliced, Uk, dist=True, weight=1, k=None, Pi=None, ax=None, c=None,
+                  title=None):
     U0, S0 = 0, 0
     Sk = S(alpha, gamma, U0, S0, Uk)
     if dist and (Pi is not None):
         distS, distU = dist_k(alpha, gamma, Uk, Pi, k, 0, 0, unspliced, spliced, weight)
         d = distS ** 2 + distU ** 2
-        ax.scatter(spliced, unspliced, c=np.log1p(d), s=10)
+        ax.scatter(spliced, unspliced, c=np.log1p(d), s=30)
 
     else:
         ax.scatter(spliced, unspliced,
                    color="darkgrey" if c is None else None,
-                   c = c if c is not None else None,
-                   s=10)
+                   c=c if c is not None else None,
+                   s=20)
         # plt.scatter(spliced[k], unspliced[k], color="blue")
     u_range = np.arange(0, Uk + (Uk / 1000), Uk / 1000)
     ax.plot(S(alpha, gamma, U0, S0, u_range), u_range, color="blue")
@@ -226,9 +229,11 @@ def plot_kinetics(alpha, gamma, spliced, unspliced, Uk, dist=True, weight=1, k=N
 
         ax.quiver(spliced, unspliced, (Si - spliced), (Pi - unspliced), **kwargs)
 
-    ax.set_xlabel("spliced")
-    ax.set_ylabel("unspliced")
-    ax.set_title(title)
+    # ax.set_xlabel("spliced")
+    # ax.set_ylabel("unspliced")
+    ax.set_yticks([])
+    ax.set_xticks([])
+    ax.set_title(title, fontsize=30)
 
 
 def get_velocity(adata, use_raw=True, key="fit", normalise=None, scale=True):
