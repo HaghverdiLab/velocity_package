@@ -2,7 +2,7 @@ import math
 import numpy as np
 import pandas as pd
 
-def set_prior_state(adata, connections_dict):
+def set_prior_state(adata, connections_dict, clusterkey="clusters"):
     """
     Using a dictionary with connected cell states prior states are set for upregulation and downregulation.
     
@@ -13,6 +13,9 @@ def set_prior_state(adata, connections_dict):
     connections_dict: 'dict' 
         Dictionary connecting a cell state (cell type or cluster) to it's parent cell state.
         Example: connections_dict = {'Alpha cells': ['Pre-endocrine']}
+    clusterkey: 'int'
+        Key under which the clusters or celltypes mentioned in the connection dictionary are 
+        saved in the adata object.
 
     Returns
     -------
@@ -27,7 +30,7 @@ def set_prior_state(adata, connections_dict):
     for idx, gene in enumerate(adata.var_names):
         counts_df = pd.DataFrame({'Ms':adata[:,gene].layers["Ms"].flatten(),
                                   'Mu':adata[:,gene].layers["Mu"].flatten(), 
-                                  'clusters':adata.obs['clusters'].values})
+                                  'clusters':adata.obs[clusterkey].values})
         counts_df["Ms"] = counts_df["Ms"]/max(counts_df["Ms"])*100
         counts_df["Mu"] = counts_df["Mu"]/max(counts_df["Mu"])*100
         counts_df["k"] = -1
