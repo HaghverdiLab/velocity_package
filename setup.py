@@ -2,7 +2,7 @@ from setuptools import setup
 
 setup(
     name='velocity_package',
-    version='0.1',
+    version='0.2',
     packages=['velocity', 'velocity.tools', 'velocity.processing', 'velocity.visualisation'],
     url='',
     license='',

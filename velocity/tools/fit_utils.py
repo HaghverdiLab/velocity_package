@@ -180,23 +180,11 @@ def cost_wrapper_fastPi_scaling(alpha_gamma_Uk, U0, S0, unspliced, spliced, n):
     return cost_wrapper_fastPi([alpha, gamma, Uk], U0, S0, u_s, spliced, n)
 
 
-import matplotlib.pyplot as plt
-
-
 def get_likelihood(alpha, gamma, U0, S0, Uk, spliced, unspliced, k, Pi):
     distS, distU = dist_k(alpha, gamma, Uk, Pi, k, U0, S0, unspliced, spliced, weight=1)
-
     std_s, std_u = np.std(spliced), np.std(unspliced)
-    #plt.hist(distS, bins=50)
-    #plt.hist(distU, bins=50, alpha=.5)
-    #plt.show()
-    #print(np.std(distS), np.std(distU))
     distS /= std_s
     distU /= std_u
-    #plt.hist(distS, bins=50)
-    #plt.hist(distU, bins=50, alpha=.5)
-    #plt.show()
-    #print(np.std(distS), np.std(distU))
 
     distX = distU ** 2 + distS ** 2
     varx = np.var(np.sign(distS) * np.sqrt(distX))

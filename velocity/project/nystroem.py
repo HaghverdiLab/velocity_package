@@ -1,34 +1,43 @@
 from scipy.spatial import cKDTree
-from velocity.visualisation.vis_utils import *
+from velocity.project.nystroem_utils import *
 
 
-def nystroem_project(Y_data, X_current, X_future, n_neighbors=100, row_norm=True,
+def nystroem_project(adata, basis="umap", n_neighbors=100,
                      force_no_scale=False):
     """Function to project future states onto a given low-dimensional embedding.
 
-    Parameters
-    ----------
-    Y_data: 'np.ndarray'
-        n_obs*d low-dimensional embedding of observations
-    X_current: 'np.ndarray'
-        n_obs*n_vars matrix of current states
-    X_future: 'np.ndarray'
-        n_obs*n_vars matrix of future states
-        Corresponds to X_current+velocities
-    n_neighbors: 'int'  (default: 100)
-        Number of neighbors for which to calculate the transition probability. Since far-away points have very
-        low transition probs (~=0), we can assume trans prob = 0 for those.
-        Note: select lower values for slower runtime but potentially at the cost of performance.
-    row_norm: 'bool' (default: True)
-        Whether to row-normalise the transition probability matrix.
-    force_no_scale: 'bool' (default:False)
-        We automatically check if the future states are too far out of distribution and down / up-scale the velocities
-        if so. Set to 'True' to stop scaling. Note that this can result in issues with the projection.
-    Returns
-    -------
-    Matrix of future states projected onto the low-dimensional embedding.
-    'np.ndarray' n_obs*d
+        Parameters
+        ----------
+        adata: :class:'~anndata.AnnData'
+            Annotated data matrix. Should contain both \"velocity_pca\" and \"X_pca\" in obsm.
+        basis: 'str' (default: "umap")
+            Observation matrix (=low dimensional embedding) on which to project the velocities. "X_"+basis should be
+            in adata.obsm.
+        n_neighbors: 'int'  (default: 100)
+            Number of neighbors for which to calculate the transition probability. Since far-away points have very
+            low transition probs (~=0), we can assume trans prob = 0 for those.
+            Note: select lower values for slower runtime but potentially at the cost of performance.
+        force_no_scale: 'bool' (default:False)
+            We automatically check if the future states are too far out of distribution and down / up-scale the velocities
+            if so. Set to 'True' to stop scaling. Note that this can result in issues with the projection.
+        Returns
+        -------
+        saves "velocity_"+basis" in adata.obsm
     """
+    if "X_"+basis not in adata.obsm:
+        print("\"X_"+basis+"\" not found in adata.obsm. You need to compute the low-dimensional embedding and save it "
+                           "in the annData object first.")
+        print("Stopping.")
+        return
+    if ("X_pca" not in adata.obsm) or ("velocity_pca" not in adata.obsm):
+        print("\"velocity_pca\" or \"X_pca\" not found in adata.obsm. You need to compute the velocities in pca "
+              "space first with \"velocity.tl.pca.pca_project\".")
+        print("Stopping.")
+        return
+    Y_data = adata.obsm["X_"+basis]
+    X_current, X_velo = adata.obsm["X_pca"], adata.obsm["velocity_pca"]
+    X_future = X_current+X_velo
+
     # check if future states are not too far out of the distribution of original states
     percent_velo = np.max(np.abs(X_future - X_current), axis=0) / (
             np.max(X_current, axis=0) - np.min(X_current, axis=0))
@@ -58,7 +67,8 @@ def nystroem_project(Y_data, X_current, X_future, n_neighbors=100, row_norm=True
     # normalise trans P matrix
     P_2 = np.dot(np.dot(D, P_2), D)
     Y_future = np.dot(P_2, Y_data)
-    return Y_future
+    print("Saving to annData object.")
+    adata.obsm["velocity_"+basis] = Y_future-Y_data
 
 
 def diffmap_and_project(X_current, X_future, sigma=50):
