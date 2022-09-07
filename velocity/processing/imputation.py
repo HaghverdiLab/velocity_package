@@ -39,7 +39,7 @@ def impute_counts(adata, n_neighbours = 30, n_pcs = 15, layer_NN = 'spliced', un
     pca_embedding = pca.transform(spliced_scaled)
 
     # find nearest neighbours
-    NN = cKDTree(pca_embedding).query(x=pca_embedding, k=n_neighbours, n_jobs=1)[1]
+    NN = cKDTree(pca_embedding).query(x=pca_embedding, k=n_neighbours)[1]
 
     # impute counts using nearest neighbours (NN)
     Mu = np.nanmean(np.array(adata.layers[unspliced_layer])[NN], axis=1)
