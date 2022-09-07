@@ -24,4 +24,4 @@ Valérie Marot-Lassauzaie, Brigitte Joanne Bouman, et al. [Towards reliable quan
 
 ### Support
 
-If you found a bug, would like to see a feature implemented, or have a question please open an [issue](https://github.com/ValerieMarot/velocity_package/issues).
+If you found a bug, would like to see a feature implemented, or have a question please open an [issue](https://github.com/HaghverdiLab/velocity_package/issues).
