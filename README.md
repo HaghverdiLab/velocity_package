@@ -16,7 +16,7 @@ To install the package from GitHub, please use:
      
 ### How to run
 
-Tutorials explaining the RNA analysis workflow with $\kappa$-velo and eco-velo can be found [here](https://github.com/bjbouman/cell-state-velocities).
+Tutorials explaining the RNA analysis workflow with $\kappa$-velo and eco-velo can be found [here](https://github.com/HaghverdiLab/velocity_notebooks).
 
 ### References
 
