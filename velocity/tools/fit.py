@@ -18,14 +18,14 @@ def recover_reaction_rate_pars(adata, use_raw, n=100, key="fit", fit_scaling=Tru
     if not inplace:
         adata = adata.copy()
     # write to adata object
-    adata.var[key + "_alpha"] = alpha
-    adata.var[key + "_beta"] = beta
-    adata.var[key + "_gamma"] = gamma
-    adata.var[key + "_U_switch"] = U_switch
-    adata.var[key + "_likelihood"] = likelihood
-    adata.layers[key + "_Pi"] = Pi
+    adata.var[key + "_alpha"] = alpha.astype(float)
+    adata.var[key + "_beta"] = beta.astype(float)
+    adata.var[key + "_gamma"] = gamma.astype(float)
+    adata.var[key + "_U_switch"] = U_switch.astype(float)
+    adata.var[key + "_likelihood"] = likelihood.astype(float)
+    adata.layers[key + "_Pi"] = Pi.astype(float)
     if fit_scaling:
-        adata.var[key + "_scaling"] = scaling
+        adata.var[key + "_scaling"] = scaling.astype(float)
     if not inplace:
         return adata
 

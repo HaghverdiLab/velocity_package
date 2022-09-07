@@ -36,4 +36,4 @@ def pca_project(adata, use_raw=False, variance_mean_scale=True, random_state=0, 
     print("Saving to annData object.")
     adata.obsm["X_pca"] = pca_pts
     adata.obsm["velocity_pca"] = pca_v
-    adata.uns["pca"] = {"n_pcs": n_pcs, "random_state": random_state}
+    adata.uns["pca"] = {"n_pcs": n_pcs, "random_state": random_state, "explained_variance":pca.explained_variance_}
