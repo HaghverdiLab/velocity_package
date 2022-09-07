@@ -10,7 +10,7 @@ The tools in this package are compatible with [scanpy](https://scanpy.readthedoc
 
 To install the package from GitHub, please use:
 
-     git clone https://github.com/ValerieMarot/velocity_package
+     git clone https://github.com/HaghverdiLab/velocity_package
      cd velocity_package
      pip install -e .
      
