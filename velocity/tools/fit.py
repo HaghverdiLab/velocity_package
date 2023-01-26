@@ -79,7 +79,7 @@ def fit_all_parallel(unspliced, spliced, n=100, n_cores=None, n_parts=None, fit_
             out.append(fit(p[0], p[1], n, fit_scaling, fit_kappa))
         return out
 
-    result = Parallel(n_jobs=8)(delayed(fit_helper)(pars[i]) for i in output)
+    result = Parallel(n_jobs=n_cores)(delayed(fit_helper)(pars[i]) for i in output)
 
     # format result
     r = []
