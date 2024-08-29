@@ -57,7 +57,7 @@ def nystroem_project(adata, basis="umap", n_neighbors=100,
 
     print("Projecting velocities using Nyström approach.")
 
-    NN = cKDTree(X_current).query(x=X_future, k=n_neighbors, n_jobs=1)[1]
+    NN = cKDTree(X_current).query(x=X_future, k=n_neighbors)[1]
     # get row normalisation factors
     P = d2p_NN(pairwise_distances(X_current, metric="euclidean"), NN, row_norm=False)
     D = np.diag(1 / np.sqrt(np.sum(P, axis=1)))

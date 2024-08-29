@@ -25,7 +25,7 @@ def set_prior_state(adata, connections_dict, clusterkey="clusters"):
 
     """
     
-    k_df = pd.DataFrame(np.zeros(adata.layers["Mu"].shape, dtype=np.int), columns=adata.var_names)
+    k_df = pd.DataFrame(np.zeros(adata.layers["Mu"].shape, dtype=int), columns=adata.var_names)
     
     for idx, gene in enumerate(adata.var_names):
         counts_df = pd.DataFrame({'Ms':adata[:,gene].layers["Ms"].flatten(),

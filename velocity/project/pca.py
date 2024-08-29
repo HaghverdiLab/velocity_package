@@ -9,8 +9,8 @@ def pca_project(adata, use_raw=False, variance_mean_scale=True, random_state=0, 
         return
     velocity = adata.layers["velocity"]
     spliced = adata.layers["spliced" if use_raw else "Ms"]
-    sub = np.any(np.isnan(np.array(velocity.astype(np.float))), axis=1)  # velocities need to be non-null for PCA
-    sub &= np.any(np.isnan(np.array(spliced.astype(np.float))), axis=1)
+    sub = np.any(np.isnan(np.array(velocity.astype(float))), axis=1)  # velocities need to be non-null for PCA
+    sub &= np.any(np.isnan(np.array(spliced.astype(float))), axis=1)
     if np.sum(sub) > 0:
         print("Warning: " + str(np.sum(sub)) + " genes excluded from PCA because the velocities are np.nan. This "
                                                "usually means that the kinetics are not recovered for those genes.")
