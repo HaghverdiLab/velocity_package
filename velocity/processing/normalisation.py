@@ -89,3 +89,5 @@ def get_total_counts(X, squared=False):
         total_counts = np.asarray(np.square(X).sum(axis=1))
 
     return total_counts
+
+# A TEST
